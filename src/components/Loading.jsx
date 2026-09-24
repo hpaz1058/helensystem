@@ -1,0 +1,1 @@
+export default function Loading(){return <div className="min-vh-100 d-grid place-items-center" style={{placeItems:'center'}}><div className="text-center"><div className="spinner-border mb-3"/><div>Loading Thread & Co…</div></div></div>}

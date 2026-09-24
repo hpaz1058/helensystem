@@ -1,0 +1,28 @@
+{
+  "name": "thread-co-pwa",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "client": "vite",
+    "server": "node backend/server.js",
+    "dev:all": "npm run dev",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.8",
+    "bootstrap-icons": "^1.13.1",
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "firebase": "^12.4.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.9.1",
+    "vite": "^7.1.7",
+    "vite-plugin-pwa": "^1.0.3",
+    "@vitejs/plugin-react": "^5.0.4"
+  }
+}
