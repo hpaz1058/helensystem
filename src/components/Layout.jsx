@@ -26,7 +26,17 @@ export default function Layout({ children, user, role, cartCount, onCart, onLogo
           {role === 'admin' && <span className="admin-badge">ADMIN</span>}
           <button className="btn btn-sm border-0" aria-label="Search"><i className="bi bi-search"/></button>
           {role !== 'admin' && <button className="btn btn-sm border-0 position-relative" onClick={onCart} aria-label="Cart"><i className="bi bi-bag"/>{cartCount>0&&<span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-dark">{cartCount}</span>}</button>}
-          <div className="dropdown"><button className="btn btn-sm border-0" data-bs-toggle="dropdown"><i className="bi bi-person"/></button><ul className="dropdown-menu dropdown-menu-end"><li><span className="dropdown-item-text small">{user?.email}</span></li><li><hr className="dropdown-divider"/></li><li><button className="dropdown-item" onClick={onLogout}>Log out</button></li></ul></div>
+          <div className="dropdown">
+            <button className="btn btn-sm border-0" data-bs-toggle="dropdown"><i className="bi bi-person"/></button>
+            <ul className="dropdown-menu dropdown-menu-end">
+              <li><span className="dropdown-item-text small fw-semibold">{user?.displayName || 'User'}</span></li>
+              <li><span className="dropdown-item-text small text-muted">{user?.email}</span></li>
+              <li><span className="dropdown-item-text small"><span className={`badge ${role === 'admin' ? 'bg-success' : 'bg-secondary'}`}>Role: {role || 'user'}</span></span></li>
+              <li><hr className="dropdown-divider"/></li>
+              {role === 'admin' && <li><Link className="dropdown-item" to="/admin"><i className="bi bi-speedometer2 me-2"/>Admin Dashboard</Link></li>}
+              <li><button className="dropdown-item text-danger" onClick={onLogout}><i className="bi bi-box-arrow-right me-2"/>Log out</button></li>
+            </ul>
+          </div>
         </div>
       </div>
     </header>

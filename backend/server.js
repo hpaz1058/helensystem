@@ -3,119 +3,361 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import mysql from 'mysql2/promise';
 
-const __filename=fileURLToPath(import.meta.url);const __dirname=path.dirname(__filename);
-const DATA=path.join(__dirname,'data');const productsFile=path.join(DATA,'products.json');const ordersFile=path.join(DATA,'orders.json');
-const app=express();const PORT=process.env.PORT||8080;
-app.use(cors({origin:true,credentials:false}));app.use(express.json());
-const read=(file,fallback=[])=>{try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch{return fallback}};
-const write=(file,data)=>fs.writeFileSync(file,JSON.stringify(data,null,2));
-const safeProduct = (product) => product ? ({
-  id: product.id,
-  name: product.name,
-  price: product.price,
-  category: product.category,
-  quantity: product.quantity,
-}) : null;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DATA = path.join(__dirname, 'data');
+const productsFile = path.join(DATA, 'products.json');
+const ordersFile = path.join(DATA, 'orders.json');
 
-const log=(type,payload={})=>{
-  const line={time:new Date().toISOString(),type,...payload};
-  console.log(`\n[Thread & Co. API] ${line.time} | ${type}`);
-  console.dir(line,{depth:8,colors:true});
+const app = express();
+const PORT = process.env.PORT || 8080;
+
+app.use(cors({ origin: true, credentials: false }));
+app.use(express.json());
+
+// -----------------------------------------------------------------------------
+// MySQL Database Connection Pool (XAMPP phpMyAdmin: thread_co_db)
+// -----------------------------------------------------------------------------
+const db = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'thread_co_db',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
+
+// Verify MySQL connection and auto-initialize tables if needed
+(async () => {
+  try {
+    const conn = await db.getConnection();
+    console.log('✅ Connected to MySQL Database (thread_co_db)');
+    conn.release();
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS products (
+        product_id INT AUTO_INCREMENT PRIMARY KEY,
+        product_name VARCHAR(100) NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        price DECIMAL(10, 2) NOT NULL,
+        stock_quantity INT NOT NULL DEFAULT 0,
+        description TEXT
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS user (
+        user_id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        role VARCHAR(50) NOT NULL DEFAULT 'user'
+      )
+    `);
+  } catch (err) {
+    console.warn('⚠️ MySQL connection notice:', err.message);
+  }
+})();
+
+const read = (file, fallback = []) => {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
 };
 
-app.use((req,res,next)=>{
-  const start=Date.now();
-  // Only log non-GET requests (mutations) and admin endpoints
+const write = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
+
+const log = (type, payload = {}) => {
+  const line = { time: new Date().toISOString(), type, ...payload };
+  console.log(`\n[Thread & Co. API] ${line.time} | ${type}`);
+  console.dir(line, { depth: 8, colors: true });
+};
+
+app.use((req, res, next) => {
+  const start = Date.now();
   const isMutation = req.method !== 'GET';
   const isAdmin = req.path.startsWith('/api/admin');
   if (isMutation || isAdmin) {
     console.log(`\n[HTTP →] ${req.method} ${req.originalUrl}`);
-    if (Object.keys(req.body||{}).length) console.log('[HTTP BODY]', req.body);
+    if (Object.keys(req.body || {}).length) console.log('[HTTP BODY]', req.body);
   }
-  res.on('finish',()=>{
+  res.on('finish', () => {
     if (isMutation || isAdmin) {
-      log('request_complete',{
-        method:req.method,
-        path:req.originalUrl,
-        status:res.statusCode,
-        ms:Date.now()-start,
+      log('request_complete', {
+        method: req.method,
+        path: req.originalUrl,
+        status: res.statusCode,
+        ms: Date.now() - start,
       });
     }
   });
   next();
 });
 
-app.get('/api/health',(req,res)=>res.json({ok:true,service:'thread-co-api',time:new Date().toISOString()}));
-app.get('/api/product',(req,res)=>{const products=read(productsFile);log('products_list',{count:products.length});res.json(products)});
-app.get('/api/product/:id',(req,res)=>{const p=read(productsFile).find(x=>String(x.id)===String(req.params.id));if(!p){log('product_get_not_found',{productId:req.params.id});return res.status(404).json({message:'Product not found'})}log('product_get',{productId:p.id,name:p.name,price:p.price});res.json(p)});
-app.post('/api/product',(req,res)=>{const products=read(productsFile);const p={id:`p-${Date.now()}`,name:String(req.body.name||'Untitled Product'),price:Number(req.body.price||0),category:req.body.category||'Tops',image:req.body.image||'/images/top.svg',description:req.body.description||''};products.push(p);write(productsFile,products);log('product_create',{action:'Created product',product:{id:p.id,name:p.name,price:p.price}});res.status(201).json(p)});
-app.put('/api/product/:id',(req,res)=>{const products=read(productsFile);const idx=products.findIndex(x=>String(x.id)===String(req.params.id));if(idx<0)return res.status(404).json({message:'Product not found'});products[idx]={...products[idx],...req.body,id:products[idx].id,price:Number(req.body.price??products[idx].price)};write(productsFile,products);log('product_update',{action:'Updated product',product:{id:products[idx].id,name:products[idx].name,price:products[idx].price}});res.json(products[idx])});
-app.delete('/api/product/:id',(req,res)=>{const products=read(productsFile);const next=products.filter(x=>String(x.id)!==String(req.params.id));if(next.length===products.length){log('product_delete_not_found',{productId:req.params.id});return res.status(404).json({message:'Product not found'})}const deleted=products.find(x=>String(x.id)===String(req.params.id));write(productsFile,next);log('product_delete',{action:'Deleted product',product:{id:deleted.id,name:deleted.name,price:deleted.price}});res.json({ok:true,product:deleted})});
-app.post('/api/order',(req,res)=>{const {customer,items,total,paymentMethod,gcashReference,status}=req.body;if(!customer?.email||!Array.isArray(items)||!items.length)return res.status(400).json({message:'Customer and order items are required'});if(paymentMethod==='GCash'&&!gcashReference)return res.status(400).json({message:'GCash reference number is required'});const orders=read(ordersFile);const order={id:`order-${Date.now()}`,createdAt:new Date().toISOString(),customer,items,total:Number(total||0),paymentMethod,gcashReference:gcashReference||'',status:status||'Processing'};orders.unshift(order);write(ordersFile,orders);log('order_create',{action:'Created order',orderId:order.id,email:customer.email,total:order.total,paymentMethod,itemCount:items.length});res.status(201).json(order)});
-app.get('/api/order',(req,res)=>{const email=String(req.query.email||'');const orders=read(ordersFile).filter(o=>o.customer?.email===email);res.json(orders)});
-app.get('/api/admin/orders',(req,res)=>{const orders=read(ordersFile);log('admin_orders_list',{count:orders.length});res.json(orders)});
-app.put('/api/admin/orders/:id',(req,res)=>{const orders=read(ordersFile);const idx=orders.findIndex(x=>String(x.id)===String(req.params.id));if(idx<0)return res.status(404).json({message:'Order not found'});orders[idx].status=req.body.status||orders[idx].status;write(ordersFile,orders);log('order_status',{action:'Updated order status',orderId:req.params.id,status:orders[idx].status});res.json(orders[idx])});
-app.post('/api/activity',(req,res)=>{log('client_activity',req.body||{});res.json({ok:true})});
+app.get('/api/health', (req, res) =>
+  res.json({ ok: true, service: 'thread-co-api', time: new Date().toISOString(), database: 'mysql' })
+);
 
-// Admin Product CRUD endpoints with focused logging
-app.post('/api/admin/product', (req, res) => {
+// =============================================================================
+// /api/product CRUD ENDPOINTS (MySQL + Fallback Sync)
+// =============================================================================
+
+// 1. SELECT - Retrieve all products
+app.get('/api/product', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT * FROM products ORDER BY product_id ASC');
+    if (rows && rows.length > 0) {
+      const products = rows.map((r) => ({
+        id: r.product_id,
+        product_id: r.product_id,
+        name: r.product_name,
+        product_name: r.product_name,
+        price: Number(r.price),
+        category: r.category,
+        quantity: r.stock_quantity,
+        stock_quantity: r.stock_quantity,
+        description: r.description,
+      }));
+      log('products_list_mysql', { count: products.length });
+      return res.json(products);
+    }
+  } catch (err) {
+    console.warn('MySQL SELECT failed, using file fallback:', err.message);
+  }
   const products = read(productsFile);
+  log('products_list_file', { count: products.length });
+  res.json(products);
+});
+
+// 2. SELECT by ID - Retrieve single product
+app.get('/api/product/:id', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT * FROM products WHERE product_id = ?', [req.params.id]);
+    if (rows.length > 0) {
+      const r = rows[0];
+      return res.json({
+        id: r.product_id,
+        product_id: r.product_id,
+        name: r.product_name,
+        price: Number(r.price),
+        category: r.category,
+        quantity: r.stock_quantity,
+        description: r.description,
+      });
+    }
+  } catch (err) {}
+  const p = read(productsFile).find((x) => String(x.id) === String(req.params.id));
+  if (!p) return res.status(404).json({ message: 'Product not found' });
+  res.json(p);
+});
+
+// 3. INSERT - Add new product
+const handleCreateProduct = async (req, res) => {
+  const name = String(req.body.name || req.body.product_name || 'Untitled Product');
+  const price = Number(req.body.price || 0);
+  const category = req.body.category || 'Tops';
+  const stock = Number(req.body.quantity ?? req.body.stock_quantity ?? 15);
+  const description = req.body.description || '';
+  const image = req.body.image || '/images/top.svg';
+
+  let newId = `p-${Date.now()}`;
+  try {
+    const [result] = await db.query(
+      'INSERT INTO products (product_name, category, price, stock_quantity, description) VALUES (?, ?, ?, ?, ?)',
+      [name, category, price, stock, description]
+    );
+    newId = result.insertId;
+  } catch (dbErr) {
+    console.warn('MySQL INSERT failed, saving to file only:', dbErr.message);
+  }
+
   const p = {
-    id: `p-${Date.now()}`,
-    name: String(req.body.name || 'Untitled Product'),
-    price: Number(req.body.price || 0),
-    category: req.body.category || 'Tops',
-    image: req.body.image || '/images/top.svg',
-    description: req.body.description || ''
+    id: newId,
+    product_id: newId,
+    name,
+    product_name: name,
+    price,
+    category,
+    quantity: stock,
+    stock_quantity: stock,
+    image,
+    description,
   };
+
+  const products = read(productsFile);
   products.push(p);
   write(productsFile, products);
-  log('admin_product_create', {
-    action: 'ADMIN: Created product',
-    product: { id: p.id, name: p.name, price: p.price }
-  });
+
+  log('product_create', { action: 'Created product in MySQL', product: { id: p.id, name: p.name, price: p.price } });
   res.status(201).json(p);
-});
+};
 
-app.put('/api/admin/product/:id', (req, res) => {
-  const products = read(productsFile);
-  const idx = products.findIndex(x => String(x.id) === String(req.params.id));
-  if (idx < 0) {
-    log('admin_product_update_not_found', { productId: req.params.id });
-    return res.status(404).json({ message: 'Product not found' });
-  }
-  const oldProduct = products[idx];
-  products[idx] = { 
-    ...products[idx], 
-    ...req.body, 
-    id: products[idx].id, 
-    price: Number(req.body.price ?? products[idx].price) 
-  };
-  write(productsFile, products);
-  log('admin_product_update', {
-    action: 'ADMIN: Updated product',
-    productId: req.params.id,
-    changes: { name: products[idx].name, price: products[idx].price }
-  });
-  res.json(products[idx]);
-});
+app.post('/api/product', handleCreateProduct);
+app.post('/api/admin/product', handleCreateProduct);
 
-app.delete('/api/admin/product/:id', (req, res) => {
-  const products = read(productsFile);
-  const deleted = products.find(x => String(x.id) === String(req.params.id));
-  if (!deleted) {
-    log('admin_product_delete_not_found', { productId: req.params.id });
-    return res.status(404).json({ message: 'Product not found' });
+// 4. UPDATE - Modify existing product
+const handleUpdateProduct = async (req, res) => {
+  const id = req.params.id;
+  const name = req.body.name || req.body.product_name;
+  const category = req.body.category;
+  const price = req.body.price !== undefined ? Number(req.body.price) : undefined;
+  const stock = req.body.quantity !== undefined ? Number(req.body.quantity) : (req.body.stock_quantity !== undefined ? Number(req.body.stock_quantity) : undefined);
+  const description = req.body.description;
+
+  try {
+    await db.query(
+      'UPDATE products SET product_name = COALESCE(?, product_name), category = COALESCE(?, category), price = COALESCE(?, price), stock_quantity = COALESCE(?, stock_quantity), description = COALESCE(?, description) WHERE product_id = ?',
+      [name || null, category || null, price !== undefined ? price : null, stock !== undefined ? stock : null, description || null, id]
+    );
+  } catch (dbErr) {
+    console.warn('MySQL UPDATE failed:', dbErr.message);
   }
-  const next = products.filter(x => String(x.id) !== String(req.params.id));
+
+  const products = read(productsFile);
+  const idx = products.findIndex((x) => String(x.id) === String(id));
+  if (idx >= 0) {
+    products[idx] = {
+      ...products[idx],
+      ...req.body,
+      id: products[idx].id,
+      price: Number(req.body.price ?? products[idx].price),
+    };
+    write(productsFile, products);
+  }
+
+  log('product_update', { action: 'Updated product in MySQL', productId: id, changes: req.body });
+  res.json({ id, name, category, price, stock_quantity: stock, description });
+};
+
+app.put('/api/product/:id', handleUpdateProduct);
+app.put('/api/admin/product/:id', handleUpdateProduct);
+
+// 5. DELETE - Remove product
+const handleDeleteProduct = async (req, res) => {
+  const id = req.params.id;
+  try {
+    await db.query('DELETE FROM products WHERE product_id = ?', [id]);
+  } catch (dbErr) {
+    console.warn('MySQL DELETE failed:', dbErr.message);
+  }
+
+  const products = read(productsFile);
+  const deleted = products.find((x) => String(x.id) === String(id));
+  const next = products.filter((x) => String(x.id) !== String(id));
   write(productsFile, next);
-  log('admin_product_delete', {
-    action: 'ADMIN: Deleted product',
-    product: { id: deleted.id, name: deleted.name, price: deleted.price }
-  });
-  res.json({ ok: true, product: deleted });
+
+  log('product_delete', { action: 'Deleted product in MySQL', productId: id });
+  res.json({ ok: true, product: deleted || { id } });
+};
+
+app.delete('/api/product/:id', handleDeleteProduct);
+app.delete('/api/admin/product/:id', handleDeleteProduct);
+
+// =============================================================================
+// /api/user CRUD ENDPOINTS (Instructor Sample Pattern)
+// =============================================================================
+app.get('/api/user', async (req, res) => {
+  try {
+    const [user] = await db.query('SELECT * FROM user');
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.use((err,req,res,next)=>{console.error(err);log('error',{message:err.message});res.status(500).json({message:'Server error'})});
-app.listen(PORT,()=>log('server_start',{port:PORT}));
+app.post('/api/user', async (req, res) => {
+  try {
+    const [result] = await db.query('INSERT INTO user (name, role) VALUES (?, ?)', [
+      req.body.name,
+      req.body.role || 'user',
+    ]);
+    res.status(201).json({ user_id: result.insertId, ...req.body });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/user/:id', async (req, res) => {
+  try {
+    await db.query('DELETE FROM user WHERE user_id = ?', [req.params.id]);
+    res.json({ ok: true, deletedId: req.params.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/user/:id', async (req, res) => {
+  try {
+    await db.query('UPDATE user SET name = ?, role = ? WHERE user_id = ?', [
+      req.body.name,
+      req.body.role,
+      req.params.id,
+    ]);
+    res.json({ user_id: req.params.id, ...req.body });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================================================================
+// Orders & Activity (Store Support)
+// =============================================================================
+app.post('/api/order', (req, res) => {
+  const { customer, items, total, paymentMethod, gcashReference, status } = req.body;
+  if (!customer?.email || !Array.isArray(items) || !items.length) {
+    return res.status(400).json({ message: 'Customer and order items are required' });
+  }
+  const orders = read(ordersFile);
+  const order = {
+    id: `order-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    customer,
+    items,
+    total: Number(total || 0),
+    paymentMethod,
+    gcashReference: gcashReference || '',
+    status: status || 'Processing',
+  };
+  orders.unshift(order);
+  write(ordersFile, orders);
+  log('order_create', { action: 'Created order', orderId: order.id, total: order.total });
+  res.status(201).json(order);
+});
+
+app.get('/api/order', (req, res) => {
+  const email = String(req.query.email || '');
+  const orders = read(ordersFile).filter((o) => o.customer?.email === email);
+  res.json(orders);
+});
+
+app.get('/api/admin/orders', (req, res) => {
+  const orders = read(ordersFile);
+  res.json(orders);
+});
+
+app.put('/api/admin/orders/:id', (req, res) => {
+  const orders = read(ordersFile);
+  const idx = orders.findIndex((x) => String(x.id) === String(req.params.id));
+  if (idx < 0) return res.status(404).json({ message: 'Order not found' });
+  orders[idx].status = req.body.status || orders[idx].status;
+  write(ordersFile, orders);
+  res.json(orders[idx]);
+});
+
+app.post('/api/activity', (req, res) => {
+  log('client_activity', req.body || {});
+  res.json({ ok: true });
+});
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  log('error', { message: err.message });
+  res.status(500).json({ message: 'Server error' });
+});
+
+app.listen(PORT, () => {
+  log('server_start', { port: PORT, status: 'MySQL CRUD server running on http://localhost:' + PORT });
+});

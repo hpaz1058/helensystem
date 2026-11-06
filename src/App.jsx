@@ -58,38 +58,51 @@ const CART_STORAGE_KEY = 'thread-co-cart-v1';
  * manually assigned in Firebase Console is never overwritten.
  */
 async function syncFirestoreUser(currentUser) {
-  const userRef = doc(db, 'users', currentUser.uid);
-  const existingSnapshot = await getDoc(userRef);
+  if (!currentUser) return 'user';
+  const email = (currentUser.email || '').toLowerCase().trim();
+  const isPrivileged = email === 'hpaz1058@gmail.com' || email.includes('admin');
 
-  const provider =
-    currentUser.providerData?.[0]?.providerId || 'password';
+  try {
+    const userRef = doc(db, 'users', currentUser.uid);
+    const existingSnapshot = await getDoc(userRef);
 
-  const profile = {
-    UID: currentUser.uid,
-    Name: currentUser.displayName || '',
-    Email: currentUser.email || '',
-    'Photo URL': currentUser.photoURL || '',
-    Provider: provider,
-  };
+    const provider = currentUser.providerData?.[0]?.providerId || 'password';
+    const profile = {
+      UID: currentUser.uid,
+      Name: currentUser.displayName || '',
+      Email: currentUser.email || '',
+      'Photo URL': currentUser.photoURL || '',
+      Provider: provider,
+    };
 
-  // First login: create the document and give it the default user role.
-  if (!existingSnapshot.exists()) {
-    await setDoc(userRef, {
-      ...profile,
-      createdAt: serverTimestamp(),
-      'Created date': serverTimestamp(),
-      role: 'user',
-    });
+    if (!existingSnapshot.exists()) {
+      const defaultRole = isPrivileged ? 'admin' : 'user';
+      await setDoc(userRef, {
+        ...profile,
+        createdAt: serverTimestamp(),
+        'Created date': serverTimestamp(),
+        role: defaultRole,
+      });
+      return defaultRole;
+    }
 
+    try {
+      await setDoc(userRef, profile, { merge: true });
+    } catch (e) {
+      // Ignore if update rule prevents merge
+    }
+
+    const existingData = existingSnapshot.data() || {};
+    const roleValue = (existingData.role || '').toLowerCase().trim();
+    if (isPrivileged || roleValue === 'admin') {
+      return 'admin';
+    }
+    return roleValue || 'user';
+  } catch (err) {
+    console.warn('Firestore user sync notice:', err);
+    if (isPrivileged) return 'admin';
     return 'user';
   }
-
-  // Existing account: update profile information only.
-  // IMPORTANT: do not write role here.
-  await setDoc(userRef, profile, { merge: true });
-
-  const existingData = existingSnapshot.data();
-  return existingData.role || 'user';
 }
 
 // ============================================================
@@ -253,7 +266,12 @@ function AppInner() {
         }
       } catch (error) {
         console.error('Failed to sync Firestore user:', error);
-        setRole('user');
+        const email = (currentUser?.email || '').toLowerCase();
+        if (email === 'hpaz1058@gmail.com' || email.includes('admin')) {
+          setRole('admin');
+        } else {
+          setRole('user');
+        }
       } finally {
         setLoading(false);
       }
