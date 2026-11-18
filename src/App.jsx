@@ -21,6 +21,8 @@ import {
 import {
   doc,
   getDoc,
+  getDocFromServer,
+  onSnapshot,
   setDoc,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -67,7 +69,13 @@ async function syncFirestoreUser(currentUser) {
 
   try {
     const userRef = doc(db, 'users', currentUser.uid);
-    const existingSnapshot = await getDoc(userRef);
+    let existingSnapshot;
+    try {
+      // Force fetch directly from Firebase server to bypass stale IndexedDB cache!
+      existingSnapshot = await getDocFromServer(userRef);
+    } catch {
+      existingSnapshot = await getDoc(userRef);
+    }
 
     const provider = currentUser.providerData?.[0]?.providerId || 'password';
     const profile = {
@@ -249,11 +257,18 @@ function AppInner() {
   }, []);
 
   // ----------------------------------------------------------
-  // FIREBASE AUTH + FIRESTORE ROLE
+  // FIREBASE AUTH + FIRESTORE REAL-TIME ROLE SYNC
   // ----------------------------------------------------------
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    let unsubscribeFirestore = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+        unsubscribeFirestore = null;
+      }
 
       if (!currentUser) {
         setRole(null);
@@ -264,6 +279,20 @@ function AppInner() {
       try {
         const firestoreRole = await syncFirestoreUser(currentUser);
         setRole(firestoreRole);
+
+        // Real-time listener: syncs role live whenever Firestore document changes!
+        const userRef = doc(db, 'users', currentUser.uid);
+        unsubscribeFirestore = onSnapshot(
+          userRef,
+          (snapshot) => {
+            if (snapshot.exists()) {
+              const data = snapshot.data();
+              const liveRole = (data.role || 'user').toLowerCase().trim();
+              setRole(liveRole);
+            }
+          },
+          (err) => console.warn('Real-time role sync notice:', err)
+        );
 
         try {
           await api.activity({
@@ -282,7 +311,10 @@ function AppInner() {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestore) unsubscribeFirestore();
+    };
   }, []);
 
   // ----------------------------------------------------------
