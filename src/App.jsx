@@ -64,8 +64,6 @@ const CART_STORAGE_KEY = 'thread-co-cart-v1';
  */
 async function syncFirestoreUser(currentUser) {
   if (!currentUser) return 'user';
-  const email = (currentUser.email || '').toLowerCase().trim();
-  const isPrivileged = email === 'hpaz1058@gmail.com' || email.includes('admin');
 
   try {
     const userRef = doc(db, 'users', currentUser.uid);
@@ -80,32 +78,30 @@ async function syncFirestoreUser(currentUser) {
       Provider: provider,
     };
 
+    // First login: create document with default role 'user' in Firestore
     if (!existingSnapshot.exists()) {
-      const defaultRole = isPrivileged ? 'admin' : 'user';
       await setDoc(userRef, {
         ...profile,
         createdAt: serverTimestamp(),
         'Created date': serverTimestamp(),
-        role: defaultRole,
+        role: 'user',
       });
-      return defaultRole;
+      return 'user';
     }
 
+    // Existing account: update profile details only without overwriting role
     try {
       await setDoc(userRef, profile, { merge: true });
     } catch (e) {
       // Ignore if update rule prevents merge
     }
 
+    // Read role directly from the Firestore user document
     const existingData = existingSnapshot.data() || {};
-    const roleValue = (existingData.role || '').toLowerCase().trim();
-    if (isPrivileged || roleValue === 'admin') {
-      return 'admin';
-    }
-    return roleValue || 'user';
+    const roleValue = (existingData.role || 'user').toLowerCase().trim();
+    return roleValue;
   } catch (err) {
     console.warn('Firestore user sync notice:', err);
-    if (isPrivileged) return 'admin';
     return 'user';
   }
 }
@@ -280,12 +276,7 @@ function AppInner() {
         }
       } catch (error) {
         console.error('Failed to sync Firestore user:', error);
-        const email = (currentUser?.email || '').toLowerCase();
-        if (email === 'hpaz1058@gmail.com' || email.includes('admin')) {
-          setRole('admin');
-        } else {
-          setRole('user');
-        }
+        setRole('user');
       } finally {
         setLoading(false);
       }
@@ -328,8 +319,6 @@ function AppInner() {
     await updateProfile(credential.user, { displayName: name });
 
     const userRef = doc(db, 'users', credential.user.uid);
-    const isPrivileged = email.toLowerCase().includes('admin') || email.toLowerCase() === 'hpaz1058@gmail.com';
-    const assignedRole = isPrivileged ? 'admin' : 'user';
 
     await setDoc(
       userRef,
@@ -341,12 +330,12 @@ function AppInner() {
         Provider: 'password',
         createdAt: serverTimestamp(),
         'Created date': serverTimestamp(),
-        role: assignedRole,
+        role: 'user',
       },
       { merge: true }
     );
 
-    setRole(assignedRole);
+    setRole('user');
   };
 
   // ----------------------------------------------------------

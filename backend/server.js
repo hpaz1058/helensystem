@@ -102,9 +102,8 @@ const requireAdminRole = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Unauthorized: Authentication required' });
   }
-  const email = (req.user.email || '').toLowerCase().trim();
   const role = (req.user.role || '').toLowerCase().trim();
-  const isAdmin = email === 'hpaz1058@gmail.com' || email.includes('admin') || role === 'admin';
+  const isAdmin = role === 'admin' || req.user.admin === true;
 
   if (!isAdmin) {
     return res.status(403).json({ error: 'Forbidden: Admin role required for this database operation' });
