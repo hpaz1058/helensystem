@@ -520,29 +520,55 @@ function AppInner() {
         onLogout={logout}
       >
         <Routes>
-          {/* Public Views */}
-          <Route path="/" element={user ? <Home products={products} /> : <Welcome />} />
-          <Route path="/shop" element={<Shop products={products} />} />
-          <Route path="/category/:category" element={<CategoryRoute products={products} />} />
+          {/* Landing / Storefront Views: strictly separated by role */}
+          <Route
+            path="/"
+            element={
+              role === 'admin' ? (
+                <Navigate to="/admin" replace />
+              ) : user ? (
+                <Home products={products} />
+              ) : (
+                <Welcome />
+              )
+            }
+          />
+          <Route
+            path="/shop"
+            element={role === 'admin' ? <Navigate to="/admin" replace /> : <Shop products={products} />}
+          />
+          <Route
+            path="/category/:category"
+            element={role === 'admin' ? <Navigate to="/admin" replace /> : <CategoryRoute products={products} />}
+          />
           <Route
             path="/product/:id"
-            element={<ProductDetail products={products} onAdd={addToCart} onBuyNow={buyNow} />}
+            element={
+              role === 'admin' ? (
+                <Navigate to="/admin" replace />
+              ) : (
+                <ProductDetail products={products} onAdd={addToCart} onBuyNow={buyNow} />
+              )
+            }
           />
-          <Route path="/about" element={<About />} />
+          <Route
+            path="/about"
+            element={role === 'admin' ? <Navigate to="/admin" replace /> : <About />}
+          />
 
           {/* Auth View */}
           <Route
             path="/login"
             element={
               user ? (
-                <Navigate to={role === 'admin' ? '/admin' : '/profile'} replace />
+                <Navigate to={role === 'admin' ? '/admin' : '/'} replace />
               ) : (
                 <Login onGoogle={googleLogin} onEmailLogin={emailLogin} onRegister={register} />
               )
             }
           />
 
-          {/* Protected Customer Routes */}
+          {/* Protected Routes */}
           <Route
             path="/profile"
             element={
@@ -555,7 +581,7 @@ function AppInner() {
             path="/orders"
             element={
               <ProtectedRoute user={user} role={role}>
-                <Orders user={user} />
+                {role === 'admin' ? <Navigate to="/admin" replace /> : <Orders user={user} />}
               </ProtectedRoute>
             }
           />
@@ -563,7 +589,7 @@ function AppInner() {
             path="/checkout"
             element={
               <ProtectedRoute user={user} role={role}>
-                <Checkout user={user} items={cart} onPlaceOrder={placeOrder} />
+                {role === 'admin' ? <Navigate to="/admin" replace /> : <Checkout user={user} items={cart} onPlaceOrder={placeOrder} />}
               </ProtectedRoute>
             }
           />
@@ -571,7 +597,7 @@ function AppInner() {
             path="/order-confirmation"
             element={
               <ProtectedRoute user={user} role={role}>
-                <Confirmation />
+                {role === 'admin' ? <Navigate to="/admin" replace /> : <Confirmation />}
               </ProtectedRoute>
             }
           />

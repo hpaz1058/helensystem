@@ -18,27 +18,27 @@ const moreItems = [
 
 export default function Layout({ children, user, role, cartCount, onCart, onLogout }) {
   const location = useLocation();
+  const isAdmin = role === 'admin';
   const isActive = (path) => path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
-  const isAdminView = location.pathname.startsWith('/admin');
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="container-fluid h-100 d-flex align-items-center justify-content-between px-3 px-lg-4">
           <div className="d-flex align-items-center gap-3">
-            <Link to="/" className="text-decoration-none text-dark d-flex align-items-center gap-2">
-              <span className="brand-mark">♧</span>
-              <span className="brand">Thread & Co.</span>
-            </Link>
-            {role === 'admin' && (
-              <div className="d-none d-sm-flex align-items-center gap-2 ms-3">
-                <Link to="/admin" className={`btn btn-sm rounded-pill ${isAdminView ? 'btn-dark' : 'btn-outline-dark'}`}>
-                  <i className="bi bi-speedometer2 me-1" />Admin
-                </Link>
-                <Link to="/shop" className={`btn btn-sm rounded-pill ${!isAdminView ? 'btn-dark' : 'btn-outline-dark'}`}>
-                  <i className="bi bi-bag me-1" />Storefront
-                </Link>
-              </div>
+            {isAdmin ? (
+              <Link to="/admin" className="text-decoration-none text-dark d-flex align-items-center gap-2">
+                <span className="brand-mark">♧</span>
+                <span className="brand">Thread & Co.</span>
+                <span className="badge bg-dark rounded-pill px-2 py-1 ms-1 text-uppercase letter-spacing-1 small">
+                  Admin Dashboard
+                </span>
+              </Link>
+            ) : (
+              <Link to="/" className="text-decoration-none text-dark d-flex align-items-center gap-2">
+                <span className="brand-mark">♧</span>
+                <span className="brand">Thread & Co.</span>
+              </Link>
             )}
           </div>
 
@@ -48,18 +48,23 @@ export default function Layout({ children, user, role, cartCount, onCart, onLogo
                 <span className="d-none d-md-inline small text-secondary">
                   {user.displayName || user.email}
                 </span>
-                {role === 'admin' && <span className="admin-badge">ADMIN</span>}
-                <button className="btn btn-sm border-0" aria-label="Search">
-                  <i className="bi bi-search" />
-                </button>
-                <button className="btn btn-sm border-0 position-relative" onClick={onCart} aria-label="Cart">
-                  <i className="bi bi-bag" />
-                  {cartCount > 0 && (
-                    <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-dark">
-                      {cartCount}
-                    </span>
-                  )}
-                </button>
+                {isAdmin ? (
+                  <span className="admin-badge">ADMIN</span>
+                ) : (
+                  <>
+                    <button className="btn btn-sm border-0" aria-label="Search">
+                      <i className="bi bi-search" />
+                    </button>
+                    <button className="btn btn-sm border-0 position-relative" onClick={onCart} aria-label="Cart">
+                      <i className="bi bi-bag" />
+                      {cartCount > 0 && (
+                        <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-dark">
+                          {cartCount}
+                        </span>
+                      )}
+                    </button>
+                  </>
+                )}
                 <div className="dropdown">
                   <button className="btn btn-sm border-0" data-bs-toggle="dropdown" aria-label="User menu">
                     <i className="bi bi-person" />
@@ -69,7 +74,7 @@ export default function Layout({ children, user, role, cartCount, onCart, onLogo
                     <li><span className="dropdown-item-text small text-muted">{user.email}</span></li>
                     <li>
                       <span className="dropdown-item-text small">
-                        <span className={`badge ${role === 'admin' ? 'bg-success' : 'bg-secondary'} text-uppercase`}>
+                        <span className={`badge ${isAdmin ? 'bg-success' : 'bg-secondary'} text-uppercase`}>
                           Role: {role || 'user'}
                         </span>
                       </span>
@@ -80,15 +85,10 @@ export default function Layout({ children, user, role, cartCount, onCart, onLogo
                         <i className="bi bi-person-circle me-2" />My Profile
                       </Link>
                     </li>
-                    <li>
-                      <Link className="dropdown-item" to="/orders">
-                        <i className="bi bi-box-seam me-2" />My Orders
-                      </Link>
-                    </li>
-                    {role === 'admin' && (
+                    {!isAdmin && (
                       <li>
-                        <Link className="dropdown-item text-primary" to="/admin">
-                          <i className="bi bi-speedometer2 me-2" />Admin Dashboard
+                        <Link className="dropdown-item" to="/orders">
+                          <i className="bi bi-box-seam me-2" />My Orders
                         </Link>
                       </li>
                     )}
@@ -112,7 +112,7 @@ export default function Layout({ children, user, role, cartCount, onCart, onLogo
         </div>
       </header>
 
-      {!isAdminView && (
+      {!isAdmin && (
         <aside className="sidebar">
           <div className="nav-section">Shop</div>
           {shopItems.map(([path, label, icon]) => (
@@ -128,20 +128,12 @@ export default function Layout({ children, user, role, cartCount, onCart, onLogo
               <span>{label}</span>
             </Link>
           ))}
-          {role === 'admin' && (
-            <div className="mt-3 pt-3 border-top">
-              <Link to="/admin" className="nav-pill text-decoration-none text-success fw-semibold">
-                <i className="bi bi-speedometer2" />
-                <span>Admin Panel</span>
-              </Link>
-            </div>
-          )}
         </aside>
       )}
 
-      <main className={isAdminView ? '' : 'content-wrap'}>{children}</main>
+      <main className={isAdmin ? 'admin-wrap' : 'content-wrap'}>{children}</main>
 
-      {!isAdminView && (
+      {!isAdmin && (
         <nav className="mobile-nav">
           {shopItems.slice(0, 5).map(([path, label, icon]) => (
             <Link key={path} to={path} className="text-decoration-none">

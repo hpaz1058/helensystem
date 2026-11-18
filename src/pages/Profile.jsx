@@ -66,32 +66,34 @@ export default function Profile({ user, role, onLogout }) {
       </div>
 
       <div className="row g-3">
-        <div className="col-12 col-md-6">
-          <div className="card h-100 border rounded-4 p-3 shadow-sm text-center">
-            <div className="fs-3 text-dark mb-2"><i className="bi bi-box-seam" /></div>
-            <h6 className="fw-semibold mb-1">My Orders</h6>
-            <p className="text-muted small mb-3">Review past purchases and shipping tracking.</p>
-            <Link to="/orders" className="btn btn-outline-dark btn-sm rounded-pill mt-auto">View Orders</Link>
-          </div>
-        </div>
         {role === 'admin' ? (
-          <div className="col-12 col-md-6">
-            <div className="card h-100 border border-success-subtle bg-success-subtle bg-opacity-10 rounded-4 p-3 shadow-sm text-center">
-              <div className="fs-3 text-success mb-2"><i className="bi bi-speedometer2" /></div>
-              <h6 className="fw-semibold text-success mb-1">Admin Dashboard</h6>
-              <p className="text-muted small mb-3">Manage MySQL products catalog & customer orders.</p>
-              <Link to="/admin" className="btn btn-success btn-sm rounded-pill mt-auto text-white">Go to Admin</Link>
+          <div className="col-12">
+            <div className="card h-100 border border-success-subtle bg-success-subtle bg-opacity-10 rounded-4 p-4 shadow-sm text-center">
+              <div className="fs-2 text-success mb-2"><i className="bi bi-speedometer2" /></div>
+              <h5 className="fw-semibold text-success mb-1">Admin Dashboard</h5>
+              <p className="text-muted small mb-3">You are signed in with an Administrator account. Access the management dashboard for MySQL products catalog & customer orders.</p>
+              <Link to="/admin" className="btn btn-success rounded-pill px-4 text-white">Go to Admin Dashboard</Link>
             </div>
           </div>
         ) : (
-          <div className="col-12 col-md-6">
-            <div className="card h-100 border rounded-4 p-3 shadow-sm text-center">
-              <div className="fs-3 text-dark mb-2"><i className="bi bi-bag" /></div>
-              <h6 className="fw-semibold mb-1">Continue Shopping</h6>
-              <p className="text-muted small mb-3">Explore modern wardrobe essentials and new arrivals.</p>
-              <Link to="/shop" className="btn btn-dark btn-sm rounded-pill mt-auto">Browse Shop</Link>
+          <>
+            <div className="col-12 col-md-6">
+              <div className="card h-100 border rounded-4 p-3 shadow-sm text-center">
+                <div className="fs-3 text-dark mb-2"><i className="bi bi-box-seam" /></div>
+                <h6 className="fw-semibold mb-1">My Orders</h6>
+                <p className="text-muted small mb-3">Review past purchases and shipping tracking.</p>
+                <Link to="/orders" className="btn btn-outline-dark btn-sm rounded-pill mt-auto">View Orders</Link>
+              </div>
             </div>
-          </div>
+            <div className="col-12 col-md-6">
+              <div className="card h-100 border rounded-4 p-3 shadow-sm text-center">
+                <div className="fs-3 text-dark mb-2"><i className="bi bi-bag" /></div>
+                <h6 className="fw-semibold mb-1">Continue Shopping</h6>
+                <p className="text-muted small mb-3">Explore modern wardrobe essentials and new arrivals.</p>
+                <Link to="/shop" className="btn btn-dark btn-sm rounded-pill mt-auto">Browse Shop</Link>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>
