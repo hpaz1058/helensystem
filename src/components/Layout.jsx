@@ -18,9 +18,7 @@ const moreItems = [
 
 export default function Layout({ children, user, role, cartCount, onCart, onLogout }) {
   const location = useLocation();
-  const isOwner = (user?.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
-  const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('thread_user_role') : null;
-  const isAdmin = role === 'admin' || isOwner || cachedRole === 'admin';
+  const isAdmin = role === 'admin';
   const isActive = (path) => path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
   return (

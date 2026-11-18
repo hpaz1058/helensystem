@@ -67,8 +67,6 @@ const CART_STORAGE_KEY = 'thread-co-cart-v1';
 async function syncFirestoreUser(currentUser) {
   if (!currentUser) return 'user';
 
-  const isOwnerEmail = (currentUser.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
-
   try {
     const userRef = doc(db, 'users', currentUser.uid);
     let existingSnapshot;
@@ -88,16 +86,15 @@ async function syncFirestoreUser(currentUser) {
       Provider: provider,
     };
 
-    // First login: create document with role in Firestore
+    // First login: create document with default role 'user' in Firestore
     if (!existingSnapshot.exists()) {
-      const initialRole = isOwnerEmail ? 'admin' : 'user';
       await setDoc(userRef, {
         ...profile,
         createdAt: serverTimestamp(),
         'Created date': serverTimestamp(),
-        role: initialRole,
+        role: 'user',
       });
-      return initialRole;
+      return 'user';
     }
 
     // Existing account: update profile details only without overwriting role
@@ -107,16 +104,14 @@ async function syncFirestoreUser(currentUser) {
       // Ignore if update rule prevents merge
     }
 
-    // Read role directly from the Firestore user document
+    // Read role strictly from the Firestore user document
     const existingData = existingSnapshot.data() || {};
-    const rawRole = (existingData.role || existingData.Role || existingData.ROLE || '').toLowerCase().trim();
-    if (rawRole === 'admin' || existingData.isAdmin === true || isOwnerEmail) {
-      return 'admin';
-    }
-    return rawRole || 'user';
+    const rawRole = (existingData.role || existingData.Role || existingData.ROLE || 'user').toLowerCase().trim();
+    const finalRole = (rawRole === 'admin' || existingData.isAdmin === true) ? 'admin' : 'user';
+    return finalRole;
   } catch (err) {
     console.warn('Firestore user sync notice:', err);
-    return isOwnerEmail ? 'admin' : 'user';
+    return 'user';
   }
 }
 
@@ -198,13 +193,7 @@ function AppInner() {
   }, []);
 
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState(() => {
-    try {
-      return localStorage.getItem('thread_user_role') || null;
-    } catch {
-      return null;
-    }
-  });
+  const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState(fallbackProducts);
 
@@ -290,59 +279,45 @@ function AppInner() {
 
       setUser(currentUser);
 
-      // Instant synchronous role resolution & navigation
-      const isOwner = (currentUser.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
-      const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('thread_user_role') : null;
-      const immediateRole = isOwner ? 'admin' : (cachedRole || 'user');
-      setRole(immediateRole);
-      try { localStorage.setItem('thread_user_role', immediateRole); } catch {}
-
-      // Instant redirect: Admin -> /admin, User -> / (no flicker)
-      const currentPath = window.location.pathname;
-      if (immediateRole === 'admin') {
-        if (currentPath === '/login' || currentPath === '/profile' || currentPath === '/' || currentPath.startsWith('/shop')) {
-          navigate('/admin', { replace: true });
-        }
-      } else if (immediateRole === 'user' && currentPath === '/login') {
-        navigate('/', { replace: true });
-      }
-
-      setLoading(false);
-
-      // Background Firestore verification & real-time sync
       try {
+        // Read strictly from Firestore server
         const firestoreRole = await syncFirestoreUser(currentUser);
         setRole(firestoreRole);
         try { localStorage.setItem('thread_user_role', firestoreRole); } catch {}
 
+        const currentPath = window.location.pathname;
         if (firestoreRole === 'admin') {
-          if (window.location.pathname === '/login' || window.location.pathname === '/profile' || window.location.pathname === '/' || window.location.pathname.startsWith('/shop')) {
+          if (currentPath === '/login' || currentPath === '/profile' || currentPath === '/' || currentPath.startsWith('/shop')) {
             navigate('/admin', { replace: true });
+          }
+        } else {
+          // Role is 'user'
+          if (currentPath === '/admin' || currentPath === '/login') {
+            navigate('/', { replace: true });
           }
         }
 
+        // Live real-time listener: immediately updates when Firestore role is changed in console
         const userRef = doc(db, 'users', currentUser.uid);
         unsubscribeFirestore = onSnapshot(
           userRef,
           (snapshot) => {
             if (snapshot.exists()) {
               const data = snapshot.data() || {};
-              const liveRole = (data.role || data.Role || data.ROLE || '').toLowerCase().trim();
-              const finalRole = (liveRole === 'admin' || data.isAdmin === true || isOwner) ? 'admin' : (liveRole || 'user');
-              setRole(finalRole);
-              try { localStorage.setItem('thread_user_role', finalRole); } catch {}
-            } else if (isOwner) {
-              setRole('admin');
-              try { localStorage.setItem('thread_user_role', 'admin'); } catch {}
+              const rawRole = (data.role || data.Role || data.ROLE || 'user').toLowerCase().trim();
+              const liveRole = (rawRole === 'admin' || data.isAdmin === true) ? 'admin' : 'user';
+              setRole(liveRole);
+              try { localStorage.setItem('thread_user_role', liveRole); } catch {}
+
+              const path = window.location.pathname;
+              if (liveRole === 'admin' && (path === '/' || path === '/login' || path === '/profile' || path.startsWith('/shop'))) {
+                navigate('/admin', { replace: true });
+              } else if (liveRole === 'user' && path === '/admin') {
+                navigate('/', { replace: true });
+              }
             }
           },
-          (err) => {
-            console.warn('Real-time role sync notice:', err);
-            if (isOwner) {
-              setRole('admin');
-              try { localStorage.setItem('thread_user_role', 'admin'); } catch {}
-            }
-          }
+          (err) => console.warn('Real-time role sync notice:', err)
         );
 
         try {
@@ -356,6 +331,10 @@ function AppInner() {
         }
       } catch (error) {
         console.error('Failed to sync Firestore user:', error);
+        setRole('user');
+        try { localStorage.setItem('thread_user_role', 'user'); } catch {}
+      } finally {
+        setLoading(false);
       }
     });
 
@@ -392,8 +371,7 @@ function AppInner() {
   const googleLogin = async () => {
     const cred = await signInWithPopup(auth, googleProvider);
     setUser(cred.user);
-    const isOwner = (cred.user.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
-    const userRole = isOwner ? 'admin' : await syncFirestoreUser(cred.user);
+    const userRole = await syncFirestoreUser(cred.user);
     setRole(userRole);
     try { localStorage.setItem('thread_user_role', userRole); } catch {}
     if (userRole === 'admin') {
@@ -407,8 +385,7 @@ function AppInner() {
   const emailLogin = async (email, password) => {
     const cred = await signInWithEmailAndPassword(auth, email, password);
     setUser(cred.user);
-    const isOwner = (cred.user.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
-    const userRole = isOwner ? 'admin' : await syncFirestoreUser(cred.user);
+    const userRole = await syncFirestoreUser(cred.user);
     setRole(userRole);
     try { localStorage.setItem('thread_user_role', userRole); } catch {}
     if (userRole === 'admin') {
@@ -557,8 +534,7 @@ function AppInner() {
   }
 
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
-  const isOwner = (user?.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
-  const isAdmin = role === 'admin' || isOwner;
+  const isAdmin = role === 'admin';
 
   return (
     <>
