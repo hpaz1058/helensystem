@@ -198,7 +198,13 @@ function AppInner() {
   }, []);
 
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState(null);
+  const [role, setRole] = useState(() => {
+    try {
+      return localStorage.getItem('thread_user_role') || null;
+    } catch {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState(fallbackProducts);
 
@@ -269,56 +275,73 @@ function AppInner() {
     let unsubscribeFirestore = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-
       if (unsubscribeFirestore) {
         unsubscribeFirestore();
         unsubscribeFirestore = null;
       }
 
       if (!currentUser) {
+        setUser(null);
         setRole(null);
+        try { localStorage.removeItem('thread_user_role'); } catch {}
         setLoading(false);
         return;
       }
 
+      setUser(currentUser);
+
+      // Instant synchronous role resolution & navigation
+      const isOwner = (currentUser.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
+      const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('thread_user_role') : null;
+      const immediateRole = isOwner ? 'admin' : (cachedRole || 'user');
+      setRole(immediateRole);
+      try { localStorage.setItem('thread_user_role', immediateRole); } catch {}
+
+      // Instant redirect: Admin -> /admin, User -> / (no flicker)
+      const currentPath = window.location.pathname;
+      if (immediateRole === 'admin') {
+        if (currentPath === '/login' || currentPath === '/profile' || currentPath === '/' || currentPath.startsWith('/shop')) {
+          navigate('/admin', { replace: true });
+        }
+      } else if (immediateRole === 'user' && currentPath === '/login') {
+        navigate('/', { replace: true });
+      }
+
+      setLoading(false);
+
+      // Background Firestore verification & real-time sync
       try {
         const firestoreRole = await syncFirestoreUser(currentUser);
         setRole(firestoreRole);
+        try { localStorage.setItem('thread_user_role', firestoreRole); } catch {}
 
-        // Auto-navigate directly: Admin straight to /admin; User straight to /
-        const currentPath = window.location.pathname;
         if (firestoreRole === 'admin') {
-          if (currentPath === '/login' || currentPath === '/profile' || currentPath === '/') {
+          if (window.location.pathname === '/login' || window.location.pathname === '/profile' || window.location.pathname === '/' || window.location.pathname.startsWith('/shop')) {
             navigate('/admin', { replace: true });
-          }
-        } else if (firestoreRole === 'user') {
-          if (currentPath === '/login') {
-            navigate('/', { replace: true });
           }
         }
 
-        // Real-time listener: syncs role live whenever Firestore document changes!
         const userRef = doc(db, 'users', currentUser.uid);
-        const isOwner = (currentUser.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
         unsubscribeFirestore = onSnapshot(
           userRef,
           (snapshot) => {
             if (snapshot.exists()) {
               const data = snapshot.data() || {};
               const liveRole = (data.role || data.Role || data.ROLE || '').toLowerCase().trim();
-              if (liveRole === 'admin' || data.isAdmin === true || isOwner) {
-                setRole('admin');
-              } else {
-                setRole(liveRole || 'user');
-              }
+              const finalRole = (liveRole === 'admin' || data.isAdmin === true || isOwner) ? 'admin' : (liveRole || 'user');
+              setRole(finalRole);
+              try { localStorage.setItem('thread_user_role', finalRole); } catch {}
             } else if (isOwner) {
               setRole('admin');
+              try { localStorage.setItem('thread_user_role', 'admin'); } catch {}
             }
           },
           (err) => {
             console.warn('Real-time role sync notice:', err);
-            if (isOwner) setRole('admin');
+            if (isOwner) {
+              setRole('admin');
+              try { localStorage.setItem('thread_user_role', 'admin'); } catch {}
+            }
           }
         );
 
@@ -333,9 +356,6 @@ function AppInner() {
         }
       } catch (error) {
         console.error('Failed to sync Firestore user:', error);
-        setRole('user');
-      } finally {
-        setLoading(false);
       }
     });
 
@@ -360,6 +380,9 @@ function AppInner() {
 
       await signOut(auth);
       setCartOpen(false);
+      setUser(null);
+      setRole(null);
+      try { localStorage.removeItem('thread_user_role'); } catch {}
       navigate('/');
     } catch (error) {
       console.error('Logout failed:', error);
@@ -369,8 +392,10 @@ function AppInner() {
   const googleLogin = async () => {
     const cred = await signInWithPopup(auth, googleProvider);
     setUser(cred.user);
-    const userRole = await syncFirestoreUser(cred.user);
+    const isOwner = (cred.user.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
+    const userRole = isOwner ? 'admin' : await syncFirestoreUser(cred.user);
     setRole(userRole);
+    try { localStorage.setItem('thread_user_role', userRole); } catch {}
     if (userRole === 'admin') {
       navigate('/admin', { replace: true });
     } else {
@@ -382,8 +407,10 @@ function AppInner() {
   const emailLogin = async (email, password) => {
     const cred = await signInWithEmailAndPassword(auth, email, password);
     setUser(cred.user);
-    const userRole = await syncFirestoreUser(cred.user);
+    const isOwner = (cred.user.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
+    const userRole = isOwner ? 'admin' : await syncFirestoreUser(cred.user);
     setRole(userRole);
+    try { localStorage.setItem('thread_user_role', userRole); } catch {}
     if (userRole === 'admin') {
       navigate('/admin', { replace: true });
     } else {
@@ -398,6 +425,7 @@ function AppInner() {
     setUser(credential.user);
     const userRole = await syncFirestoreUser(credential.user);
     setRole(userRole);
+    try { localStorage.setItem('thread_user_role', userRole); } catch {}
     if (userRole === 'admin') {
       navigate('/admin', { replace: true });
     } else {
@@ -529,6 +557,8 @@ function AppInner() {
   }
 
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
+  const isOwner = (user?.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
+  const isAdmin = role === 'admin' || isOwner;
 
   return (
     <>
@@ -540,11 +570,11 @@ function AppInner() {
         onLogout={logout}
       >
         <Routes>
-          {/* Landing / Storefront Views: strictly separated by role */}
+          {/* Landing / Storefront Views: strictly separated by role with zero flicker */}
           <Route
             path="/"
             element={
-              role === 'admin' ? (
+              isAdmin ? (
                 <Navigate to="/admin" replace />
               ) : user ? (
                 <Home products={products} />
@@ -555,16 +585,16 @@ function AppInner() {
           />
           <Route
             path="/shop"
-            element={role === 'admin' ? <Navigate to="/admin" replace /> : <Shop products={products} />}
+            element={isAdmin ? <Navigate to="/admin" replace /> : <Shop products={products} />}
           />
           <Route
             path="/category/:category"
-            element={role === 'admin' ? <Navigate to="/admin" replace /> : <CategoryRoute products={products} />}
+            element={isAdmin ? <Navigate to="/admin" replace /> : <CategoryRoute products={products} />}
           />
           <Route
             path="/product/:id"
             element={
-              role === 'admin' ? (
+              isAdmin ? (
                 <Navigate to="/admin" replace />
               ) : (
                 <ProductDetail products={products} onAdd={addToCart} onBuyNow={buyNow} />
@@ -573,7 +603,7 @@ function AppInner() {
           />
           <Route
             path="/about"
-            element={role === 'admin' ? <Navigate to="/admin" replace /> : <About />}
+            element={isAdmin ? <Navigate to="/admin" replace /> : <About />}
           />
 
           {/* Auth View */}
@@ -581,7 +611,7 @@ function AppInner() {
             path="/login"
             element={
               user ? (
-                <Navigate to={role === 'admin' ? '/admin' : '/'} replace />
+                <Navigate to={isAdmin ? '/admin' : '/'} replace />
               ) : (
                 <Login onGoogle={googleLogin} onEmailLogin={emailLogin} onRegister={register} />
               )
@@ -593,7 +623,7 @@ function AppInner() {
             path="/profile"
             element={
               <ProtectedRoute user={user} role={role}>
-                {role === 'admin' ? (
+                {isAdmin ? (
                   <Navigate to="/admin" replace />
                 ) : (
                   <Profile user={user} role={role} onLogout={logout} />
@@ -605,7 +635,7 @@ function AppInner() {
             path="/orders"
             element={
               <ProtectedRoute user={user} role={role}>
-                {role === 'admin' ? <Navigate to="/admin" replace /> : <Orders user={user} />}
+                {isAdmin ? <Navigate to="/admin" replace /> : <Orders user={user} />}
               </ProtectedRoute>
             }
           />
@@ -613,7 +643,7 @@ function AppInner() {
             path="/checkout"
             element={
               <ProtectedRoute user={user} role={role}>
-                {role === 'admin' ? <Navigate to="/admin" replace /> : <Checkout user={user} items={cart} onPlaceOrder={placeOrder} />}
+                {isAdmin ? <Navigate to="/admin" replace /> : <Checkout user={user} items={cart} onPlaceOrder={placeOrder} />}
               </ProtectedRoute>
             }
           />
@@ -621,7 +651,7 @@ function AppInner() {
             path="/order-confirmation"
             element={
               <ProtectedRoute user={user} role={role}>
-                {role === 'admin' ? <Navigate to="/admin" replace /> : <Confirmation />}
+                {isAdmin ? <Navigate to="/admin" replace /> : <Confirmation />}
               </ProtectedRoute>
             }
           />
