@@ -103,9 +103,10 @@ async function syncFirestoreUser(currentUser) {
       existingData.role ?? existingData.Role ?? existingData.ROLE ?? (existingData.isAdmin || existingData.admin ? 'admin' : 'user')
     ).toLowerCase().trim();
     const finalRole = (rawRole === 'admin' || rawRole === 'administrator') ? 'admin' : 'user';
+    console.log(`[RBAC Sync] User: ${currentUser.email} | Firestore role field: "${existingData.role}" => Active Role: ${finalRole}`);
     return finalRole;
   } catch (err) {
-    console.warn('Firestore user sync notice:', err);
+    console.error('[RBAC Sync Error - Check Firebase Rules]:', err);
     return 'user';
   }
 }
