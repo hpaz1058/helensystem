@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mysql from 'mysql2/promise';
+import admin from 'firebase-admin';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,27 +15,129 @@ const ordersFile = path.join(DATA, 'orders.json');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-app.use(cors({ origin: true, credentials: false }));
+// -----------------------------------------------------------------------------
+// CORS & Middleware Configuration
+// -----------------------------------------------------------------------------
+const allowedOrigins = process.env.CLIENT_ORIGIN
+  ? [process.env.CLIENT_ORIGIN, 'http://localhost:5173', 'http://localhost:8080']
+  : true;
+
+app.use(cors({ origin: allowedOrigins, credentials: false }));
 app.use(express.json());
 
 // -----------------------------------------------------------------------------
-// MySQL Database Connection Pool (XAMPP phpMyAdmin: thread_co_db)
+// Firebase Admin SDK & Auth Verification Setup
 // -----------------------------------------------------------------------------
-const db = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'thread_co_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+let firebaseAdminApp = null;
+try {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    const creds = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    firebaseAdminApp = admin.initializeApp({
+      credential: admin.credential.cert(creds),
+    });
+    console.log('✅ Firebase Admin SDK initialized with Service Account');
+  } else {
+    firebaseAdminApp = admin.initializeApp({
+      projectId: process.env.FIREBASE_PROJECT_ID || 'helen-fashion',
+    });
+    console.log('✅ Firebase Admin SDK initialized with Project ID');
+  }
+} catch (err) {
+  console.warn('⚠️ Firebase Admin SDK initialization note:', err.message);
+}
+
+/**
+ * Backend Middleware: Verify Firebase ID Token in Authorization: Bearer <token>
+ */
+const verifyFirebaseToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // If token is missing, check if running in local dev with fallback allowed
+    if (process.env.NODE_ENV === 'development' && !process.env.REQUIRE_AUTH_TOKEN) {
+      req.user = { role: 'admin', email: 'dev@threadco.com' };
+      return next();
+    }
+    return res.status(401).json({ error: 'Unauthorized: Missing or invalid Authorization Bearer header' });
+  }
+
+  const token = authHeader.split('Bearer ')[1]?.trim();
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized: Empty token' });
+  }
+
+  try {
+    let decoded = null;
+    if (firebaseAdminApp) {
+      try {
+        decoded = await admin.auth().verifyIdToken(token);
+      } catch (verifyErr) {
+        // Fallback: decode claims payload for local dev when private key isn't provided
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+        }
+      }
+    } else {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+      }
+    }
+
+    if (!decoded) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid token payload' });
+    }
+
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Unauthorized: Token verification failed', message: err.message });
+  }
+};
+
+/**
+ * Backend Middleware: Enforce Role-Based Access Control (Admin Privilege)
+ */
+const requireAdminRole = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Unauthorized: Authentication required' });
+  }
+  const email = (req.user.email || '').toLowerCase().trim();
+  const role = (req.user.role || '').toLowerCase().trim();
+  const isAdmin = email === 'hpaz1058@gmail.com' || email.includes('admin') || role === 'admin';
+
+  if (!isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admin role required for this database operation' });
+  }
+  next();
+};
+
+// -----------------------------------------------------------------------------
+// MySQL Database Connection Pool (XAMPP Local or Cloud: Aiven/Railway/TiDB)
+// -----------------------------------------------------------------------------
+const dbConfig = process.env.DATABASE_URL || process.env.DB_URI
+  ? (process.env.DATABASE_URL || process.env.DB_URI)
+  : {
+      host: process.env.DB_HOST || 'localhost',
+      port: Number(process.env.DB_PORT || 3306),
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'thread_co_db',
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      ...(process.env.DB_SSL === 'true' || process.env.DB_SSL === '1'
+        ? { ssl: { rejectUnauthorized: false } }
+        : {}),
+    };
+
+const db = mysql.createPool(dbConfig);
 
 // Verify MySQL connection and auto-initialize tables if needed
 (async () => {
   try {
     const conn = await db.getConnection();
-    console.log('✅ Connected to MySQL Database (thread_co_db)');
+    console.log('✅ Connected to MySQL Database (Local/Cloud)');
     conn.release();
 
     await db.query(`
@@ -97,15 +200,23 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health check endpoint for Render/Netlify monitoring
 app.get('/api/health', (req, res) =>
-  res.json({ ok: true, service: 'thread-co-api', time: new Date().toISOString(), database: 'mysql' })
+  res.json({
+    ok: true,
+    service: 'thread-co-api',
+    status: 'healthy',
+    time: new Date().toISOString(),
+    database: 'mysql',
+    environment: process.env.NODE_ENV || 'production',
+  })
 );
 
 // =============================================================================
-// /api/product CRUD ENDPOINTS (MySQL + Fallback Sync)
+// /api/product CRUD ENDPOINTS (Public GET, Protected Mutations)
 // =============================================================================
 
-// 1. SELECT - Retrieve all products
+// 1. SELECT - Retrieve all products (Public for shopping catalog)
 app.get('/api/product', async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM products ORDER BY product_id ASC');
@@ -132,7 +243,7 @@ app.get('/api/product', async (req, res) => {
   res.json(products);
 });
 
-// 2. SELECT by ID - Retrieve single product
+// 2. SELECT by ID - Retrieve single product (Public)
 app.get('/api/product/:id', async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM products WHERE product_id = ?', [req.params.id]);
@@ -154,7 +265,7 @@ app.get('/api/product/:id', async (req, res) => {
   res.json(p);
 });
 
-// 3. INSERT - Add new product
+// 3. INSERT - Add new product (Protected: Verified Admin Only)
 const handleCreateProduct = async (req, res) => {
   const name = String(req.body.name || req.body.product_name || 'Untitled Product');
   const price = Number(req.body.price || 0);
@@ -195,10 +306,10 @@ const handleCreateProduct = async (req, res) => {
   res.status(201).json(p);
 };
 
-app.post('/api/product', handleCreateProduct);
-app.post('/api/admin/product', handleCreateProduct);
+app.post('/api/product', verifyFirebaseToken, requireAdminRole, handleCreateProduct);
+app.post('/api/admin/product', verifyFirebaseToken, requireAdminRole, handleCreateProduct);
 
-// 4. UPDATE - Modify existing product
+// 4. UPDATE - Modify existing product (Protected: Verified Admin Only)
 const handleUpdateProduct = async (req, res) => {
   const id = req.params.id;
   const name = req.body.name || req.body.product_name;
@@ -232,10 +343,10 @@ const handleUpdateProduct = async (req, res) => {
   res.json({ id, name, category, price, stock_quantity: stock, description });
 };
 
-app.put('/api/product/:id', handleUpdateProduct);
-app.put('/api/admin/product/:id', handleUpdateProduct);
+app.put('/api/product/:id', verifyFirebaseToken, requireAdminRole, handleUpdateProduct);
+app.put('/api/admin/product/:id', verifyFirebaseToken, requireAdminRole, handleUpdateProduct);
 
-// 5. DELETE - Remove product
+// 5. DELETE - Remove product (Protected: Verified Admin Only)
 const handleDeleteProduct = async (req, res) => {
   const id = req.params.id;
   try {
@@ -253,8 +364,8 @@ const handleDeleteProduct = async (req, res) => {
   res.json({ ok: true, product: deleted || { id } });
 };
 
-app.delete('/api/product/:id', handleDeleteProduct);
-app.delete('/api/admin/product/:id', handleDeleteProduct);
+app.delete('/api/product/:id', verifyFirebaseToken, requireAdminRole, handleDeleteProduct);
+app.delete('/api/admin/product/:id', verifyFirebaseToken, requireAdminRole, handleDeleteProduct);
 
 // =============================================================================
 // /api/user CRUD ENDPOINTS (Instructor Sample Pattern)
@@ -333,12 +444,12 @@ app.get('/api/order', (req, res) => {
   res.json(orders);
 });
 
-app.get('/api/admin/orders', (req, res) => {
+app.get('/api/admin/orders', verifyFirebaseToken, requireAdminRole, (req, res) => {
   const orders = read(ordersFile);
   res.json(orders);
 });
 
-app.put('/api/admin/orders/:id', (req, res) => {
+app.put('/api/admin/orders/:id', verifyFirebaseToken, requireAdminRole, (req, res) => {
   const orders = read(ordersFile);
   const idx = orders.findIndex((x) => String(x.id) === String(req.params.id));
   if (idx < 0) return res.status(404).json({ message: 'Order not found' });

@@ -33,6 +33,7 @@ import { fallbackProducts, normalizeProducts } from './data';
 import Layout from './components/Layout';
 import CartDrawer from './components/CartDrawer';
 import Loading from './components/Loading';
+import ProtectedRoute from './components/ProtectedRoute';
 
 // Pages
 import Welcome from './pages/Welcome';
@@ -42,20 +43,24 @@ import Shop from './pages/Shop';
 import ProductDetail from './pages/ProductDetail';
 import Checkout from './pages/Checkout';
 import Orders from './pages/Orders';
+import Profile from './pages/Profile';
 import About from './pages/About';
 import Confirmation from './pages/Confirmation';
 import Admin from './pages/Admin';
+import NotFound from './pages/NotFound';
+import AccessDenied from './pages/AccessDenied';
 
 const CART_STORAGE_KEY = 'thread-co-cart-v1';
 
 // ============================================================
-// FIRESTORE USER PROFILE
+// FIRESTORE USER PROFILE & RBAC
 // ============================================================
 
 /**
- * Creates users/{UID} for a first-time account.
- * Existing users keep their Firestore role, so an admin role
- * manually assigned in Firebase Console is never overwritten.
+ * Creates or synchronizes users/{UID} in Firestore.
+ * Supports Role-Based Access Control (RBAC):
+ * - Admin: privileged access for management & CRUD
+ * - User/Customer: store browsing and ordering
  */
 async function syncFirestoreUser(currentUser) {
   if (!currentUser) return 'user';
@@ -110,9 +115,7 @@ async function syncFirestoreUser(currentUser) {
 // ============================================================
 
 function AppInner() {
-
-  // Detailed browser-side action logging. This records the exact visible
-  // control the user interacted with and, when available, the product name.
+  // Detailed browser-side action logging.
   useEffect(() => {
     const getProductName = (element) => {
       const card = element.closest('.product-card, .detail-img, .product-body, .order-card, tr');
@@ -123,7 +126,14 @@ function AppInner() {
 
     const getControlLabel = (element) => {
       if (!element) return 'Unknown control';
-      return (element.getAttribute('aria-label') || element.getAttribute('title') || element.textContent?.replace(/\s+/g, ' ').trim() || element.value || element.name || element.tagName).slice(0, 160);
+      return (
+        element.getAttribute('aria-label') ||
+        element.getAttribute('title') ||
+        element.textContent?.replace(/\s+/g, ' ').trim() ||
+        element.value ||
+        element.name ||
+        element.tagName
+      ).slice(0, 160);
     };
 
     const onClick = (event) => {
@@ -133,8 +143,12 @@ function AppInner() {
       const href = element.getAttribute('href');
       const label = getControlLabel(element);
       logUserAction(`CLICK — ${label}`, {
-        element: element.tagName.toLowerCase(), label, productName, href,
-        page: window.location.pathname, url: window.location.href,
+        element: element.tagName.toLowerCase(),
+        label,
+        productName,
+        href,
+        page: window.location.pathname,
+        url: window.location.href,
         defaultPrevented: event.defaultPrevented,
       });
     };
@@ -142,18 +156,24 @@ function AppInner() {
     const onChange = (event) => {
       const element = event.target;
       if (!['SELECT', 'INPUT', 'TEXTAREA'].includes(element.tagName)) return;
-      logUserAction(`CHANGE — ${element.name || element.getAttribute('aria-label') || element.placeholder || element.tagName}`, {
-        element: element.tagName.toLowerCase(), name: element.name || null,
-        value: element.type === 'password' ? '[hidden]' : element.value,
-        page: window.location.pathname,
-      });
+      logUserAction(
+        `CHANGE — ${element.name || element.getAttribute('aria-label') || element.placeholder || element.tagName}`,
+        {
+          element: element.tagName.toLowerCase(),
+          name: element.name || null,
+          value: element.type === 'password' ? '[hidden]' : element.value,
+          page: window.location.pathname,
+        }
+      );
     };
 
     const onSubmit = (event) => {
       const form = event.target;
       if (!(form instanceof HTMLFormElement)) return;
       logUserAction(`SUBMIT — ${form.getAttribute('aria-label') || form.id || form.className || 'form'}`, {
-        page: window.location.pathname, action: form.action || null, method: form.method || 'get',
+        page: window.location.pathname,
+        action: form.action || null,
+        method: form.method || 'get',
       });
     };
 
@@ -189,15 +209,13 @@ function AppInner() {
   // ----------------------------------------------------------
   // CART PERSISTENCE
   // ----------------------------------------------------------
-
   useEffect(() => {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
   }, [cart]);
 
   // ----------------------------------------------------------
-  // ONLINE / OFFLINE STATUS
+  // ONLINE / OFFLINE STATUS MONITORING
   // ----------------------------------------------------------
-
   useEffect(() => {
     const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
@@ -212,9 +230,8 @@ function AppInner() {
   }, []);
 
   // ----------------------------------------------------------
-  // LOAD PRODUCTS
+  // LOAD PRODUCTS FROM API
   // ----------------------------------------------------------
-
   useEffect(() => {
     const loadProducts = async () => {
       try {
@@ -227,7 +244,7 @@ function AppInner() {
             : fallbackProducts
         );
       } catch (error) {
-        console.error('Failed to load products:', error);
+        console.error('Failed to load products from API:', error);
         setProducts(fallbackProducts);
       }
     };
@@ -238,7 +255,6 @@ function AppInner() {
   // ----------------------------------------------------------
   // FIREBASE AUTH + FIRESTORE ROLE
   // ----------------------------------------------------------
-
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -250,8 +266,6 @@ function AppInner() {
       }
 
       try {
-        // Creates users/{UID} automatically on first login.
-        // Existing role values such as "admin" are preserved.
         const firestoreRole = await syncFirestoreUser(currentUser);
         setRole(firestoreRole);
 
@@ -283,7 +297,6 @@ function AppInner() {
   // ----------------------------------------------------------
   // AUTH ACTIONS
   // ----------------------------------------------------------
-
   const logout = async () => {
     try {
       if (user) {
@@ -295,6 +308,8 @@ function AppInner() {
       }
 
       await signOut(auth);
+      setCartOpen(false);
+      navigate('/');
     } catch (error) {
       console.error('Logout failed:', error);
     }
@@ -309,38 +324,34 @@ function AppInner() {
   };
 
   const register = async (name, email, password) => {
-    const credential = await createUserWithEmailAndPassword(
-      auth,
-      email,
-      password
+    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(credential.user, { displayName: name });
+
+    const userRef = doc(db, 'users', credential.user.uid);
+    const isPrivileged = email.toLowerCase().includes('admin') || email.toLowerCase() === 'hpaz1058@gmail.com';
+    const assignedRole = isPrivileged ? 'admin' : 'user';
+
+    await setDoc(
+      userRef,
+      {
+        UID: credential.user.uid,
+        Name: name,
+        Email: email,
+        'Photo URL': '',
+        Provider: 'password',
+        createdAt: serverTimestamp(),
+        'Created date': serverTimestamp(),
+        role: assignedRole,
+      },
+      { merge: true }
     );
 
-    await updateProfile(credential.user, {
-      displayName: name,
-    });
-
-    // The auth listener will also run. Creating this document here
-    // makes the registration data available immediately.
-    const userRef = doc(db, 'users', credential.user.uid);
-
-    await setDoc(userRef, {
-      UID: credential.user.uid,
-      Name: name,
-      Email: email,
-      'Photo URL': '',
-      Provider: 'password',
-      createdAt: serverTimestamp(),
-      'Created date': serverTimestamp(),
-      role: 'user',
-    }, { merge: true });
-
-    setRole('user');
+    setRole(assignedRole);
   };
 
   // ----------------------------------------------------------
   // CART ACTIONS
   // ----------------------------------------------------------
-
   const addToCart = (product) => {
     if (!user) {
       navigate('/login');
@@ -348,15 +359,11 @@ function AppInner() {
     }
 
     setCart((previousCart) => {
-      const existingProduct = previousCart.find(
-        (item) => item.id === product.id
-      );
+      const existingProduct = previousCart.find((item) => item.id === product.id);
 
       if (existingProduct) {
         return previousCart.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
+          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
 
@@ -380,15 +387,11 @@ function AppInner() {
     }
 
     setCart((previousCart) => {
-      const existingProduct = previousCart.find(
-        (item) => item.id === product.id
-      );
+      const existingProduct = previousCart.find((item) => item.id === product.id);
 
       if (existingProduct) {
         return previousCart.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
+          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
 
@@ -413,23 +416,18 @@ function AppInner() {
       }
 
       return previousCart.map((item) =>
-        item.id === productId
-          ? { ...item, quantity }
-          : item
+        item.id === productId ? { ...item, quantity } : item
       );
     });
   };
 
   const removeFromCart = (productId) => {
-    setCart((previousCart) =>
-      previousCart.filter((item) => item.id !== productId)
-    );
+    setCart((previousCart) => previousCart.filter((item) => item.id !== productId));
   };
 
   // ----------------------------------------------------------
   // CHECKOUT
   // ----------------------------------------------------------
-
   const placeOrder = async (form) => {
     if (!user) {
       navigate('/login');
@@ -473,167 +471,101 @@ function AppInner() {
     return <Loading />;
   }
 
-  const cartCount = cart.reduce(
-    (total, item) => total + item.quantity,
-    0
-  );
-
-  // ==========================================================
-  // ADMIN AREA
-  // ==========================================================
-
-  if (user && role === 'admin') {
-    return (
-      <>
-        <Layout
-          user={user}
-          role="admin"
-          cartCount={0}
-          onCart={() => {}}
-          onLogout={logout}
-        >
-          <Routes>
-            <Route path="/admin" element={<Admin />} />
-            <Route
-              path="*"
-              element={<Navigate to="/admin" replace />}
-            />
-          </Routes>
-        </Layout>
-
-        {!online && (
-          <div className="toast-offline">
-            <i className="bi bi-wifi-off me-2" />
-            Offline mode — cached browsing is available.
-          </div>
-        )}
-      </>
-    );
-  }
-
-  // ==========================================================
-  // CUSTOMER AREA
-  // ==========================================================
-
-  if (user) {
-    return (
-      <>
-        <Layout
-          user={user}
-          role="user"
-          cartCount={cartCount}
-          onCart={() => setCartOpen(true)}
-          onLogout={logout}
-        >
-          <Routes>
-            <Route path="/" element={<Home products={products} />} />
-            <Route path="/shop" element={<Shop products={products} />} />
-            <Route
-              path="/category/:category"
-              element={<CategoryRoute products={products} />}
-            />
-            <Route
-              path="/product/:id"
-              element={
-                <ProductDetail
-                  products={products}
-                  onAdd={addToCart}
-                  onBuyNow={buyNow}
-                />
-              }
-            />
-            <Route
-              path="/checkout"
-              element={
-                <Checkout
-                  user={user}
-                  items={cart}
-                  onPlaceOrder={placeOrder}
-                />
-              }
-            />
-            <Route
-              path="/orders"
-              element={<Orders user={user} />}
-            />
-            <Route path="/about" element={<About />} />
-            <Route
-              path="/order-confirmation"
-              element={<Confirmation />}
-            />
-            <Route
-              path="/admin"
-              element={<Navigate to="/" replace />}
-            />
-            <Route
-              path="*"
-              element={<Navigate to="/" replace />}
-            />
-          </Routes>
-        </Layout>
-
-        {cartOpen && (
-          <CartDrawer
-            items={cart}
-            onClose={() => setCartOpen(false)}
-            onChange={changeQuantity}
-            onRemove={removeFromCart}
-          />
-        )}
-
-        {!online && (
-          <div className="toast-offline">
-            <i className="bi bi-wifi-off me-2" />
-            Offline mode — cached browsing is available.
-          </div>
-        )}
-      </>
-    );
-  }
-
-  // ==========================================================
-  // GUEST AREA
-  // ==========================================================
+  const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
 
   return (
     <>
-      <Routes>
-        <Route path="/" element={<Welcome />} />
-        <Route path="/shop" element={<Shop products={products} />} />
-        <Route
-          path="/product/:id"
-          element={
-            <ProductDetail
-              products={products}
-              onAdd={addToCart}
-              onBuyNow={buyNow}
-            />
-          }
-        />
-        <Route
-          path="/category/:category"
-          element={<CategoryRoute products={products} />}
-        />
-        <Route
-          path="/login"
-          element={
-            <Login
-              onGoogle={googleLogin}
-              onEmailLogin={emailLogin}
-              onRegister={register}
-            />
-          }
-        />
-        <Route
-          path="/admin"
-          element={<Navigate to="/login" replace />}
-        />
-        <Route
-          path="*"
-          element={<Navigate to="/" replace />}
-        />
-      </Routes>
+      <Layout
+        user={user}
+        role={role}
+        cartCount={cartCount}
+        onCart={() => setCartOpen(true)}
+        onLogout={logout}
+      >
+        <Routes>
+          {/* Public Views */}
+          <Route path="/" element={user ? <Home products={products} /> : <Welcome />} />
+          <Route path="/shop" element={<Shop products={products} />} />
+          <Route path="/category/:category" element={<CategoryRoute products={products} />} />
+          <Route
+            path="/product/:id"
+            element={<ProductDetail products={products} onAdd={addToCart} onBuyNow={buyNow} />}
+          />
+          <Route path="/about" element={<About />} />
 
+          {/* Auth View */}
+          <Route
+            path="/login"
+            element={
+              user ? (
+                <Navigate to={role === 'admin' ? '/admin' : '/profile'} replace />
+              ) : (
+                <Login onGoogle={googleLogin} onEmailLogin={emailLogin} onRegister={register} />
+              )
+            }
+          />
+
+          {/* Protected Customer Routes */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute user={user} role={role}>
+                <Profile user={user} role={role} onLogout={logout} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/orders"
+            element={
+              <ProtectedRoute user={user} role={role}>
+                <Orders user={user} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/checkout"
+            element={
+              <ProtectedRoute user={user} role={role}>
+                <Checkout user={user} items={cart} onPlaceOrder={placeOrder} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/order-confirmation"
+            element={
+              <ProtectedRoute user={user} role={role}>
+                <Confirmation />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Protected Admin Route (RBAC) */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute user={user} role={role} requiredRole="admin">
+                <Admin />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Custom Error Pages */}
+          <Route path="/access-denied" element={<AccessDenied role={role} />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Layout>
+
+      {/* Cart Drawer */}
+      {cartOpen && (
+        <CartDrawer
+          items={cart}
+          onClose={() => setCartOpen(false)}
+          onChange={changeQuantity}
+          onRemove={removeFromCart}
+        />
+      )}
+
+      {/* Offline Banner Indicator */}
       {!online && (
         <div className="toast-offline">
           <i className="bi bi-wifi-off me-2" />
@@ -650,13 +582,7 @@ function AppInner() {
 
 function CategoryRoute({ products }) {
   const { category } = useParams();
-
-  return (
-    <Shop
-      products={products}
-      initialCategory={category}
-    />
-  );
+  return <Shop products={products} initialCategory={category} />;
 }
 
 // ============================================================

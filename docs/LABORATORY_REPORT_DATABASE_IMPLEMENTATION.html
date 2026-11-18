@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Laboratory Report - Database Implementation | Thread & Co.</title>
+  <style>
+    @media print {
+      body { font-size: 11pt; }
+      .page-break { page-break-before: always; }
+      .no-print { display: none; }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: #212529;
+      max-width: 900px;
+      margin: 30px auto;
+      padding: 0 25px;
+      background-color: #fff;
+    }
+    header {
+      border-bottom: 3px solid #2b3a4a;
+      padding-bottom: 15px;
+      margin-bottom: 25px;
+    }
+    h1 {
+      color: #1a252f;
+      font-size: 24px;
+      margin: 0 0 5px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    h2 {
+      color: #2c3e50;
+      font-size: 18px;
+      margin: 5px 0 15px 0;
+      font-weight: 500;
+    }
+    h3 {
+      color: #2b3a4a;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 6px;
+      margin-top: 30px;
+      font-size: 16px;
+    }
+    .info-box {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 12px 18px;
+      margin-bottom: 25px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .info-box p {
+      margin: 0;
+      font-size: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+      font-size: 13.5px;
+    }
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 9px 12px;
+      text-align: left;
+    }
+    th {
+      background-color: #f1f5f9;
+      font-weight: 600;
+      color: #334155;
+    }
+    pre {
+      background: #1e293b;
+      color: #f8fafc;
+      padding: 14px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-family: "Consolas", "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    code {
+      font-family: "Consolas", "Courier New", monospace;
+      color: #0369a1;
+      background: #e0f2fe;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 12.5px;
+    }
+    pre code {
+      color: inherit;
+      background: transparent;
+      padding: 0;
+    }
+    .placeholder-box {
+      border: 2px dashed #94a3b8;
+      background-color: #f8fafc;
+      border-radius: 6px;
+      padding: 25px;
+      text-align: center;
+      color: #64748b;
+      font-size: 13px;
+      font-weight: 500;
+      margin: 15px 0;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #e2e8f0;
+      border-radius: 4px;
+      color: #334155;
+      float: right;
+    }
+    .checklist {
+      list-style-type: none;
+      padding-left: 0;
+    }
+    .checklist li {
+      padding: 6px 0;
+      font-size: 13.5px;
+    }
+    .checklist li::before {
+      content: "✓ ";
+      color: #16a34a;
+      font-weight: bold;
+    }
+    .action-bar {
+      margin-bottom: 20px;
+      padding: 10px 15px;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .btn {
+      background: #059669;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:hover {
+      background: #047857;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="action-bar no-print">
+    <div><strong>Ready to print or save:</strong> Click the button to export as PDF via Print dialog (Choose "Save as PDF").</div>
+    <button class="btn" onclick="window.print()">Print to PDF / Save</button>
+  </div>
+
+  <header>
+    <h1>Laboratory Activity Report</h1>
+    <h2>Database Implementation Based on Your Proposed System</h2>
+    <div><strong>Course / Subject:</strong> Application Development / Database Management Systems</div>
+  </header>
+
+  <div class="info-box">
+    <p><strong>Student Name:</strong> _____________________________</p>
+    <p><strong>Date Submitted:</strong> October 24, 2026</p>
+    <p><strong>Section / Year:</strong> _____________________________</p>
+    <p><strong>Instructor:</strong> _____________________________</p>
+  </div>
+
+  <h3>Task 1 — Identify Your System’s Data Requirements <span class="badge">10 Points</span></h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 30%;">Requirement</th>
+        <th style="width: 70%;">Your Answer</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>System Name</strong></td>
+        <td><strong>Thread & Co.</strong> (E-Commerce Clothing & Apparel Management System)</td>
+      </tr>
+      <tr>
+        <td><strong>Purpose of the System</strong></td>
+        <td>To provide an online fashion shopping platform where customers can browse, filter, and order modern wardrobe essentials, and administrators can manage catalog inventory, pricing, and orders.</td>
+      </tr>
+      <tr>
+        <td><strong>Main Information to be Stored</strong></td>
+        <td>Clothing product catalog details including item name, category, retail price, available stock quantity, and product descriptions.</td>
+      </tr>
+      <tr>
+        <td><strong>Proposed Database Name</strong></td>
+        <td><code>thread_co_db</code></td>
+      </tr>
+      <tr>
+        <td><strong>Main Table Name</strong></td>
+        <td><code>products</code></td>
+      </tr>
+      <tr>
+        <td><strong>At Least Five Columns Needed</strong></td>
+        <td><code>product_id</code>, <code>product_name</code>, <code>category</code>, <code>price</code>, <code>stock_quantity</code>, <code>description</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Task 2 — Create Your Database in phpMyAdmin <span class="badge">15 Points</span></h3>
+  <p><strong>Database Creation SQL:</strong></p>
+  <pre><code>CREATE DATABASE thread_co_db;</code></pre>
+  <div class="placeholder-box">
+    📸 <strong>[ SCREENSHOT PLACEHOLDER ]</strong><br/>
+    Paste screenshot showing <code>thread_co_db</code> created in phpMyAdmin left navigation panel.
+  </div>
+
+  <h3>Task 3 — Design and Create Your Main Table <span class="badge">20 Points</span></h3>
+  <p><strong>Table Specification:</strong></p>
+  <ul>
+    <li><strong>Table Name:</strong> <code>products</code></li>
+    <li><strong>Primary Key:</strong> <code>product_id</code> (Auto-increment integer)</li>
+    <li><strong>Columns:</strong> <code>product_id</code> (INT), <code>product_name</code> (VARCHAR 100), <code>category</code> (VARCHAR 50), <code>price</code> (DECIMAL 10,2), <code>stock_quantity</code> (INT), <code>description</code> (TEXT)</li>
+  </ul>
+  <pre><code>USE thread_co_db;
+
+CREATE TABLE products (
+    product_id INT AUTO_INCREMENT PRIMARY KEY,
+    product_name VARCHAR(100) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    price DECIMAL(10, 2) NOT NULL,
+    stock_quantity INT NOT NULL DEFAULT 0,
+    description TEXT
+);</code></pre>
+  <div class="placeholder-box">
+    📸 <strong>[ SCREENSHOT PLACEHOLDER ]</strong><br/>
+    Paste screenshot of phpMyAdmin <strong>Structure</strong> tab showing column names, types, and primary key icon.
+  </div>
+
+  <div class="page-break"></div>
+
+  <h3>Task 4 — INSERT: Add Sample Records <span class="badge">15 Points</span></h3>
+  <p>Populated 8 sample apparel records directly matching the active <strong>Thread & Co.</strong> store inventory:</p>
+  <pre><code>USE thread_co_db;
+
+INSERT INTO products (product_name, category, price, stock_quantity, description)
+VALUES
+    ('Basic Tee', 'Tops', 399.00, 25, 'A clean everyday tee with a relaxed modern fit.'),
+    ('Ribbed Knit Top', 'Tops', 499.00, 15, 'Soft ribbed texture designed for easy layering.'),
+    ('Blouse', 'Tops', 599.00, 20, 'An airy blouse that works from desk to dinner.'),
+    ('Mid Dress', 'Dresses', 799.00, 10, 'A timeless midi silhouette with an effortless shape.'),
+    ('Wide Leg Pants', 'Bottoms', 699.00, 18, 'Flowy wide-leg pants with an elevated everyday feel.'),
+    ('Sweater', 'Tops', 699.00, 12, 'A cozy knit for cooler days and relaxed styling.'),
+    ('Cardigan', 'Tops', 749.00, 14, 'A lightweight cardigan for timeless layering.'),
+    ('Shoulder Bag', 'Accessories', 899.00, 8, 'Structured shoulder bag with a polished everyday shape.');</code></pre>
+  <div class="placeholder-box">
+    📸 <strong>[ SCREENSHOT PLACEHOLDER ]</strong><br/>
+    Paste screenshot of phpMyAdmin <strong>Browse</strong> tab showing all 8 rows populated.
+  </div>
+
+  <h3>Task 5 — SELECT: Retrieve and Display Records <span class="badge">10 Points</span></h3>
+  <p><strong>Query 1 — Display all records:</strong></p>
+  <pre><code>SELECT * FROM products;</code></pre>
+  <div class="placeholder-box">📸 [ SCREENSHOT: SELECT * execution output ]</div>
+
+  <p><strong>Query 2 — Display selected columns:</strong></p>
+  <pre><code>SELECT product_id, product_name, category, price, stock_quantity FROM products;</code></pre>
+  <div class="placeholder-box">📸 [ SCREENSHOT: Specific columns query output ]</div>
+
+  <p><strong>Query 3 — Search with WHERE condition:</strong></p>
+  <pre><code>SELECT * FROM products WHERE category = 'Tops';</code></pre>
+  <div class="placeholder-box">📸 [ SCREENSHOT: Filtered products WHERE category = 'Tops' ]</div>
+
+  <h3>Task 6 — UPDATE: Modify Existing Records <span class="badge">10 Points</span></h3>
+  <p>1. Update product price for <code>product_id = 1</code> (Basic Tee):</p>
+  <pre><code>UPDATE products SET price = 449.00 WHERE product_id = 1;</code></pre>
+  <p>2. Update stock quantity for <code>product_id = 2</code> (Ribbed Knit Top):</p>
+  <pre><code>UPDATE products SET stock_quantity = 30 WHERE product_id = 2;</code></pre>
+  <p>3. Verify updated records:</p>
+  <pre><code>SELECT product_id, product_name, price, stock_quantity FROM products WHERE product_id IN (1, 2);</code></pre>
+  <div class="placeholder-box">
+    📸 <strong>[ SCREENSHOT PLACEHOLDER ]</strong><br/>
+    Paste screenshot showing successful execution and updated values (Price 449.00, Stock 30).
+  </div>
+
+  <h3>Task 7 — DELETE: Remove a Selected Record <span class="badge">10 Points</span></h3>
+  <p>Remove discontinued product (<code>product_id = 8</code>) with explicit WHERE clause:</p>
+  <pre><code>-- 1. Identify record
+SELECT * FROM products WHERE product_id = 8;
+
+-- 2. Delete record safely
+DELETE FROM products WHERE product_id = 8;
+
+-- 3. Verify deletion
+SELECT * FROM products;</code></pre>
+  <div class="placeholder-box">
+    📸 <strong>[ SCREENSHOT PLACEHOLDER ]</strong><br/>
+    Paste screenshot showing "1 row affected" and the Browse tab showing remaining 7 records.
+  </div>
+
+  <h3>Submission Checklist & Rubric Verification <span class="badge">10 Points</span></h3>
+  <ul class="checklist">
+    <li><strong>System data requirements (10 pts):</strong> Accurately defined for Thread & Co.</li>
+    <li><strong>Database creation (15 pts):</strong> <code>thread_co_db</code> successfully initialized.</li>
+    <li><strong>Table structure & data types (20 pts):</strong> <code>products</code> table with Primary Key, auto-increment, and varied types.</li>
+    <li><strong>INSERT operations (15 pts):</strong> 8 matching catalog records added.</li>
+    <li><strong>SELECT operations (15 pts):</strong> 3 distinct retrieval queries demonstrated.</li>
+    <li><strong>UPDATE operations (15 pts):</strong> 2 records updated with verification shown.</li>
+    <li><strong>DELETE operation (10 pts):</strong> Safe DELETE with WHERE condition performed.</li>
+  </ul>
+
+</body>
+</html>

@@ -1,3 +1,5 @@
+import { auth } from './firebase';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 const isObject = (value) => value !== null && typeof value === 'object';
@@ -63,9 +65,25 @@ async function request(path, options = {}) {
   });
 
   try {
+    const authHeaders = {};
+    if (auth && auth.currentUser) {
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        if (idToken) {
+          authHeaders['Authorization'] = `Bearer ${idToken}`;
+        }
+      } catch (authErr) {
+        console.warn('Could not retrieve Firebase ID token:', authErr);
+      }
+    }
+
     const response = await fetch(url, {
       ...options,
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+        ...(options.headers || {})
+      },
     });
     const data = await response.json().catch(() => ({}));
     const duration = Math.round(performance.now() - started);
