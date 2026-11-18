@@ -35,13 +35,14 @@ export default defineConfig({
               expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 30 }
             }
           },
-          // 2. App Shell Static Assets (Cache-First for Styles, Scripts, Fonts)
+          // 2. App Shell Static Assets (Network-First for Styles, Scripts, Fonts to avoid stale PWA code)
           {
             urlPattern: ({ request }) => ['style', 'script', 'font'].includes(request.destination),
-            handler: 'CacheFirst',
+            handler: 'NetworkFirst',
             options: {
-              cacheName: 'thread-static-v2',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 30 }
+              cacheName: 'thread-static-v4',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 7 }
             }
           },
           // 3. Dynamic API Caching (Network-First strategy for Express API GET requests)

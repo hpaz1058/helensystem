@@ -67,6 +67,8 @@ const CART_STORAGE_KEY = 'thread-co-cart-v1';
 async function syncFirestoreUser(currentUser) {
   if (!currentUser) return 'user';
 
+  const isOwnerEmail = (currentUser.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
+
   try {
     const userRef = doc(db, 'users', currentUser.uid);
     let existingSnapshot;
@@ -86,15 +88,16 @@ async function syncFirestoreUser(currentUser) {
       Provider: provider,
     };
 
-    // First login: create document with default role 'user' in Firestore
+    // First login: create document with role in Firestore
     if (!existingSnapshot.exists()) {
+      const initialRole = isOwnerEmail ? 'admin' : 'user';
       await setDoc(userRef, {
         ...profile,
         createdAt: serverTimestamp(),
         'Created date': serverTimestamp(),
-        role: 'user',
+        role: initialRole,
       });
-      return 'user';
+      return initialRole;
     }
 
     // Existing account: update profile details only without overwriting role
@@ -106,11 +109,14 @@ async function syncFirestoreUser(currentUser) {
 
     // Read role directly from the Firestore user document
     const existingData = existingSnapshot.data() || {};
-    const roleValue = (existingData.role || 'user').toLowerCase().trim();
-    return roleValue;
+    const rawRole = (existingData.role || existingData.Role || existingData.ROLE || '').toLowerCase().trim();
+    if (rawRole === 'admin' || existingData.isAdmin === true || isOwnerEmail) {
+      return 'admin';
+    }
+    return rawRole || 'user';
   } catch (err) {
     console.warn('Firestore user sync notice:', err);
-    return 'user';
+    return isOwnerEmail ? 'admin' : 'user';
   }
 }
 
@@ -282,16 +288,26 @@ function AppInner() {
 
         // Real-time listener: syncs role live whenever Firestore document changes!
         const userRef = doc(db, 'users', currentUser.uid);
+        const isOwner = (currentUser.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
         unsubscribeFirestore = onSnapshot(
           userRef,
           (snapshot) => {
             if (snapshot.exists()) {
-              const data = snapshot.data();
-              const liveRole = (data.role || 'user').toLowerCase().trim();
-              setRole(liveRole);
+              const data = snapshot.data() || {};
+              const liveRole = (data.role || data.Role || data.ROLE || '').toLowerCase().trim();
+              if (liveRole === 'admin' || data.isAdmin === true || isOwner) {
+                setRole('admin');
+              } else {
+                setRole(liveRole || 'user');
+              }
+            } else if (isOwner) {
+              setRole('admin');
             }
           },
-          (err) => console.warn('Real-time role sync notice:', err)
+          (err) => {
+            console.warn('Real-time role sync notice:', err);
+            if (isOwner) setRole('admin');
+          }
         );
 
         try {
