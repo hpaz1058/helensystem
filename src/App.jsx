@@ -59,37 +59,37 @@ const CART_STORAGE_KEY = 'thread-co-cart-v1';
 // ============================================================
 
 /**
- * Creates or synchronizes users/{UID} in Firestore.
- * Supports Role-Based Access Control (RBAC):
- * - Admin: privileged access for management & CRUD
- * - User/Customer: store browsing and ordering
+ * Fetches user profile from Firestore users/{UID}.
+ * Uses live server data without persisting stale IndexedDB cache.
+ * If user document does not exist, initializes it with role: 'user'.
+ * If user document exists, preserves existing role ('Admin' or 'user').
  */
 async function syncFirestoreUser(currentUser) {
   if (!currentUser) return 'user';
 
   try {
+    // 1. Ensure Firebase Auth token is attached and active
+    try {
+      await currentUser.getIdToken();
+    } catch {}
+
     const userRef = doc(db, 'users', currentUser.uid);
     let existingSnapshot;
     try {
-      // Force fetch directly from Firebase server to bypass stale IndexedDB cache!
       existingSnapshot = await getDocFromServer(userRef);
     } catch {
       existingSnapshot = await getDoc(userRef);
     }
 
-    const provider = currentUser.providerData?.[0]?.providerId || 'password';
-    const profile = {
-      UID: currentUser.uid,
-      Name: currentUser.displayName || '',
-      Email: currentUser.email || '',
-      'Photo URL': currentUser.photoURL || '',
-      Provider: provider,
-    };
-
-    // First login: create document with default role 'user' in Firestore
+    // 2. First login: create document with default role 'user' in Firestore
     if (!existingSnapshot.exists()) {
+      const provider = currentUser.providerData?.[0]?.providerId || 'google.com';
       await setDoc(userRef, {
-        ...profile,
+        UID: currentUser.uid,
+        Name: currentUser.displayName || '',
+        Email: currentUser.email || '',
+        'Photo URL': currentUser.photoURL || '',
+        Provider: provider,
         createdAt: serverTimestamp(),
         'Created date': serverTimestamp(),
         role: 'user',
@@ -97,17 +97,12 @@ async function syncFirestoreUser(currentUser) {
       return 'user';
     }
 
-    // Existing account: update profile details only without overwriting role
-    try {
-      await setDoc(userRef, profile, { merge: true });
-    } catch (e) {
-      // Ignore if update rule prevents merge
-    }
-
-    // Read role strictly from the Firestore user document
+    // 3. Document exists: read role strictly from Firestore document
     const existingData = existingSnapshot.data() || {};
-    const rawRole = (existingData.role || existingData.Role || existingData.ROLE || 'user').toLowerCase().trim();
-    const finalRole = (rawRole === 'admin' || existingData.isAdmin === true) ? 'admin' : 'user';
+    const rawRole = String(
+      existingData.role ?? existingData.Role ?? existingData.ROLE ?? (existingData.isAdmin || existingData.admin ? 'admin' : 'user')
+    ).toLowerCase().trim();
+    const finalRole = (rawRole === 'admin' || rawRole === 'administrator') ? 'admin' : 'user';
     return finalRole;
   } catch (err) {
     console.warn('Firestore user sync notice:', err);
@@ -287,7 +282,7 @@ function AppInner() {
 
         const currentPath = window.location.pathname;
         if (firestoreRole === 'admin') {
-          if (currentPath === '/login' || currentPath === '/profile' || currentPath === '/' || currentPath.startsWith('/shop')) {
+          if (currentPath !== '/admin') {
             navigate('/admin', { replace: true });
           }
         } else {
@@ -304,13 +299,15 @@ function AppInner() {
           (snapshot) => {
             if (snapshot.exists()) {
               const data = snapshot.data() || {};
-              const rawRole = (data.role || data.Role || data.ROLE || 'user').toLowerCase().trim();
-              const liveRole = (rawRole === 'admin' || data.isAdmin === true) ? 'admin' : 'user';
+              const rawRole = String(
+                data.role ?? data.Role ?? data.ROLE ?? (data.isAdmin || data.admin ? 'admin' : 'user')
+              ).toLowerCase().trim();
+              const liveRole = (rawRole === 'admin' || rawRole === 'administrator') ? 'admin' : 'user';
               setRole(liveRole);
               try { localStorage.setItem('thread_user_role', liveRole); } catch {}
 
               const path = window.location.pathname;
-              if (liveRole === 'admin' && (path === '/' || path === '/login' || path === '/profile' || path.startsWith('/shop'))) {
+              if (liveRole === 'admin' && path !== '/admin') {
                 navigate('/admin', { replace: true });
               } else if (liveRole === 'user' && path === '/admin') {
                 navigate('/', { replace: true });

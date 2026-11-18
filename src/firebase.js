@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 
 // Preserved from the provided Firebase configuration.
 const firebaseConfig = {
@@ -16,6 +16,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+// Use memoryLocalCache so client NEVER caches stale Firestore documents in IndexedDB.
+// Role changes in the Firebase Console take effect immediately in real-time.
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  localCache: memoryLocalCache()
 });
