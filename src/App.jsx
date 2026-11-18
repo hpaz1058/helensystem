@@ -286,6 +286,18 @@ function AppInner() {
         const firestoreRole = await syncFirestoreUser(currentUser);
         setRole(firestoreRole);
 
+        // Auto-navigate directly: Admin straight to /admin; User straight to /
+        const currentPath = window.location.pathname;
+        if (firestoreRole === 'admin') {
+          if (currentPath === '/login' || currentPath === '/profile' || currentPath === '/') {
+            navigate('/admin', { replace: true });
+          }
+        } else if (firestoreRole === 'user') {
+          if (currentPath === '/login') {
+            navigate('/', { replace: true });
+          }
+        }
+
         // Real-time listener: syncs role live whenever Firestore document changes!
         const userRef = doc(db, 'users', currentUser.uid);
         const isOwner = (currentUser.email || '').toLowerCase().trim() === 'hpaz1058@gmail.com';
@@ -355,35 +367,43 @@ function AppInner() {
   };
 
   const googleLogin = async () => {
-    await signInWithPopup(auth, googleProvider);
+    const cred = await signInWithPopup(auth, googleProvider);
+    setUser(cred.user);
+    const userRole = await syncFirestoreUser(cred.user);
+    setRole(userRole);
+    if (userRole === 'admin') {
+      navigate('/admin', { replace: true });
+    } else {
+      navigate('/', { replace: true });
+    }
+    return userRole;
   };
 
   const emailLogin = async (email, password) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    setUser(cred.user);
+    const userRole = await syncFirestoreUser(cred.user);
+    setRole(userRole);
+    if (userRole === 'admin') {
+      navigate('/admin', { replace: true });
+    } else {
+      navigate('/', { replace: true });
+    }
+    return userRole;
   };
 
   const register = async (name, email, password) => {
     const credential = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(credential.user, { displayName: name });
-
-    const userRef = doc(db, 'users', credential.user.uid);
-
-    await setDoc(
-      userRef,
-      {
-        UID: credential.user.uid,
-        Name: name,
-        Email: email,
-        'Photo URL': '',
-        Provider: 'password',
-        createdAt: serverTimestamp(),
-        'Created date': serverTimestamp(),
-        role: 'user',
-      },
-      { merge: true }
-    );
-
-    setRole('user');
+    setUser(credential.user);
+    const userRole = await syncFirestoreUser(credential.user);
+    setRole(userRole);
+    if (userRole === 'admin') {
+      navigate('/admin', { replace: true });
+    } else {
+      navigate('/', { replace: true });
+    }
+    return userRole;
   };
 
   // ----------------------------------------------------------
@@ -573,7 +593,11 @@ function AppInner() {
             path="/profile"
             element={
               <ProtectedRoute user={user} role={role}>
-                <Profile user={user} role={role} onLogout={logout} />
+                {role === 'admin' ? (
+                  <Navigate to="/admin" replace />
+                ) : (
+                  <Profile user={user} role={role} onLogout={logout} />
+                )}
               </ProtectedRoute>
             }
           />
@@ -607,7 +631,7 @@ function AppInner() {
             path="/admin"
             element={
               <ProtectedRoute user={user} role={role} requiredRole="admin">
-                <Admin />
+                <Admin user={user} role={role} onLogout={logout} />
               </ProtectedRoute>
             }
           />

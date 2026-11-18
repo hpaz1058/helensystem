@@ -1,5 +1,130 @@
-import React,{useState} from 'react';
-import {Link,useNavigate} from 'react-router-dom';
-export default function Login({onGoogle,onEmailLogin,onRegister}){const [mode,setMode]=useState('login');const [email,setEmail]=useState('');const [password,setPassword]=useState('');const [name,setName]=useState('');const [error,setError]=useState('');const [busy,setBusy]=useState(false);const nav=useNavigate();const submit=async(e)=>{e.preventDefault();setError('');setBusy(true);try{if(mode==='login')await onEmailLogin(email,password);else await onRegister(name,email,password);nav('/');}catch(err){setError(err.message||'Authentication failed.')}finally{setBusy(false)}};return <div className="auth-page"><div className="auth-card"><div className="auth-logo"><div className="brand-mark">♧</div><div className="brand fs-3">Thread & Co.</div><div className="text-secondary small mt-2">Modern wardrobe essentials</div></div><div className="btn-group w-100 mb-4"><button className={`btn ${mode==='login'?'btn-dark':'btn-outline-dark'}`} onClick={()=>setMode('login')}>Sign In</button><button className={`btn ${mode==='register'?'btn-dark':'btn-outline-dark'}`} onClick={()=>setMode('register')}>Create Account</button></div><form onSubmit={submit}>{mode==='register'&&<div className="mb-3"><label className="form-label">Name</label><input className="form-control" value={name} onChange={e=>setName(e.target.value)} required/></div>}<div className="mb-3"><label className="form-label">Email</label><input type="email" className="form-control" value={email} onChange={e=>setEmail(e.target.value)} required/></div><div className="mb-3"><label className="form-label">Password</label><input type="password" className="form-control" value={password} onChange={e=>setPassword(e.target.value)} minLength="6" required/></div>{error&&<div className="alert alert-danger py-2 small">{error}</div>}<button className="btn btn-darksoft w-100" disabled={busy}>{busy?'Please wait…':mode==='login'?'Sign In':'Create Account'}</button></form><div className="d-flex align-items-center gap-2 my-4"><hr className="flex-grow-1"/><span className="small text-secondary">or</span><hr className="flex-grow-1"/></div><button className="btn btn-outline-dark w-100 rounded-pill" onClick={async()=>{setError('');try{await onGoogle();nav('/')}catch(err){setError(err.message||'Google sign-in failed')}}}><i className="bi bi-google me-2"/>Continue with Google</button><div className="text-center mt-4">
-  <Link to="/" className="small text-secondary">Continue browsing as guest</Link>
-</div></div></div>}
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+
+export default function Login({ onGoogle, onEmailLogin, onRegister }) {
+  const [mode, setMode] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const nav = useNavigate();
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      if (mode === 'login') {
+        await onEmailLogin(email, password);
+      } else {
+        await onRegister(name, email, password);
+      }
+    } catch (err) {
+      setError(err.message || 'Authentication failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      await onGoogle();
+    } catch (err) {
+      setError(err.message || 'Google sign-in failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="auth-page">
+      <div className="auth-card">
+        <div className="auth-logo">
+          <div className="brand-mark">♧</div>
+          <div className="brand fs-3">Thread & Co.</div>
+          <div className="text-secondary small mt-2">Modern wardrobe essentials</div>
+        </div>
+
+        <div className="btn-group w-100 mb-4">
+          <button
+            className={`btn ${mode === 'login' ? 'btn-dark' : 'btn-outline-dark'}`}
+            onClick={() => setMode('login')}
+          >
+            Sign In
+          </button>
+          <button
+            className={`btn ${mode === 'register' ? 'btn-dark' : 'btn-outline-dark'}`}
+            onClick={() => setMode('register')}
+          >
+            Create Account
+          </button>
+        </div>
+
+        <form onSubmit={submit}>
+          {mode === 'register' && (
+            <div className="mb-3">
+              <label className="form-label">Name</label>
+              <input
+                className="form-control"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
+          )}
+          <div className="mb-3">
+            <label className="form-label">Email</label>
+            <input
+              type="email"
+              className="form-control"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+          <div className="mb-3">
+            <label className="form-label">Password</label>
+            <input
+              type="password"
+              className="form-control"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength="6"
+              required
+            />
+          </div>
+
+          {error && <div className="alert alert-danger py-2 small">{error}</div>}
+
+          <button className="btn btn-darksoft w-100" disabled={busy}>
+            {busy ? 'Signing in...' : mode === 'login' ? 'Sign In' : 'Create Account'}
+          </button>
+        </form>
+
+        <div className="d-flex align-items-center gap-2 my-4">
+          <hr className="flex-grow-1" />
+          <span className="small text-secondary">or</span>
+          <hr className="flex-grow-1" />
+        </div>
+
+        <button
+          className="btn btn-outline-dark w-100 rounded-pill"
+          disabled={busy}
+          onClick={handleGoogle}
+        >
+          <i className="bi bi-google me-2" />
+          {busy ? 'Authenticating with Google...' : 'Continue with Google'}
+        </button>
+
+        <div className="text-center mt-4">
+          <Link to="/" className="small text-secondary">
+            Continue browsing as guest
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}

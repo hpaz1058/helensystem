@@ -80,17 +80,25 @@ export default function Layout({ children, user, role, cartCount, onCart, onLogo
                       </span>
                     </li>
                     <li><hr className="dropdown-divider" /></li>
-                    <li>
-                      <Link className="dropdown-item" to="/profile">
-                        <i className="bi bi-person-circle me-2" />My Profile
-                      </Link>
-                    </li>
-                    {!isAdmin && (
+                    {isAdmin ? (
                       <li>
-                        <Link className="dropdown-item" to="/orders">
-                          <i className="bi bi-box-seam me-2" />My Orders
+                        <Link className="dropdown-item" to="/admin">
+                          <i className="bi bi-person-vcard me-2" />Admin Profile & Settings
                         </Link>
                       </li>
+                    ) : (
+                      <>
+                        <li>
+                          <Link className="dropdown-item" to="/profile">
+                            <i className="bi bi-person-circle me-2" />My Profile
+                          </Link>
+                        </li>
+                        <li>
+                          <Link className="dropdown-item" to="/orders">
+                            <i className="bi bi-box-seam me-2" />My Orders
+                          </Link>
+                        </li>
+                      </>
                     )}
                     <li><hr className="dropdown-divider" /></li>
                     <li>
