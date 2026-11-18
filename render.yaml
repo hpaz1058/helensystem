@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: thread-co-backend
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install
+    startCommand: node backend/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: NODE_ENV
+        value: production
+      - key: CLIENT_ORIGIN
+        value: https://strong-melba-f1efe5.netlify.app
+      - key: FIREBASE_PROJECT_ID
+        value: helen-fashion
+      - key: DB_SSL
+        value: "true"
+      # Set DATABASE_URL in Render Dashboard to your Cloud MySQL instance (Aiven/Railway/TiDB)
+      - key: DATABASE_URL
+        sync: false
