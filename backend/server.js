@@ -331,14 +331,22 @@ app.get('/api-dashboard', renderApiDashboard);
 // Serve static build from dist when available
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
-} else {
-  app.get('/', renderApiDashboard);
 }
 
-// App redirect route
+// Explicit handler for root /
+app.get('/', (req, res) => {
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  return renderApiDashboard(req, res);
+});
+
+// App route
 app.get('/app', (req, res) => {
-  if (fs.existsSync(path.join(distPath, 'index.html'))) {
-    return res.sendFile(path.join(distPath, 'index.html'));
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
   }
   res.redirect(process.env.CLIENT_ORIGIN || 'https://strong-melba-f1efe5.netlify.app');
 });
@@ -657,18 +665,16 @@ app.post('/api/activity', (req, res) => {
 // Full-Stack SPA Client-Side Routing for Render
 // All non-API routes serve dist/index.html so React Router handles navigation
 // =============================================================================
-if (fs.existsSync(distPath)) {
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/') || req.path === '/products' || req.path === '/status' || req.path === '/api-dashboard') {
-      return next();
-    }
-    const indexPath = path.join(distPath, 'index.html');
-    if (fs.existsSync(indexPath)) {
-      return res.sendFile(indexPath);
-    }
-    next();
-  });
-}
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/') || req.path === '/products' || req.path === '/status' || req.path === '/api-dashboard') {
+    return next();
+  }
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  return renderApiDashboard(req, res);
+});
 
 app.use((err, req, res, next) => {
   console.error(err);
