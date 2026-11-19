@@ -200,9 +200,12 @@ app.use((req, res, next) => {
 });
 
 // -----------------------------------------------------------------------------
-// Root & Navigation Routes (Professional Dashboard & Direct Redirects)
+// Root & Navigation Routes (Full-Stack Support for Render)
+// If dist/ exists, Render serves the complete Thread & Co. React Application!
 // -----------------------------------------------------------------------------
-app.get('/', async (req, res) => {
+const distPath = path.join(__dirname, '..', 'dist');
+
+const renderApiDashboard = async (req, res) => {
   let productCount = 8;
   try {
     const [rows] = await db.query('SELECT COUNT(*) as cnt FROM products');
@@ -237,8 +240,8 @@ app.get('/', async (req, res) => {
         <h1 class="display-6 fw-bold mb-2">♧ Thread & Co. API Service</h1>
         <p class="text-secondary mb-4">Node.js + Express RESTful Backend connected to TiDB Cloud (MySQL 8.0)</p>
         <div class="d-flex flex-wrap gap-2 justify-content-center">
-          <a href="${frontendUrl}" target="_blank" class="btn btn-dark rounded-pill px-4">
-            <i class="bi bi-box-arrow-up-right me-1"></i> Open Netlify App
+          <a href="/" class="btn btn-dark rounded-pill px-4">
+            <i class="bi bi-bag me-1"></i> Open Web Application
           </a>
           <a href="/api/products" class="btn btn-outline-dark rounded-pill px-4">
             <i class="bi bi-box-seam me-1"></i> View Products JSON
@@ -307,23 +310,36 @@ app.get('/', async (req, res) => {
           </div>
           <i class="bi bi-chevron-right text-muted"></i>
         </a>
-        <a href="${frontendUrl}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3">
+        <a href="/" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3">
           <div>
             <span class="badge bg-dark text-uppercase me-2">PWA</span>
-            <code class="fw-semibold text-dark">/app</code>
-            <div class="text-secondary small mt-1">Redirects directly to Netlify Frontend application</div>
+            <code class="fw-semibold text-dark">/</code>
+            <div class="text-secondary small mt-1">Opens the full Thread & Co. React Application</div>
           </div>
-          <i class="bi bi-box-arrow-up-right text-muted"></i>
+          <i class="bi bi-chevron-right text-muted"></i>
         </a>
       </div>
     </div>
   </div>
 </body>
 </html>`);
-});
+};
+
+app.get('/status', renderApiDashboard);
+app.get('/api-dashboard', renderApiDashboard);
+
+// Serve static build from dist when available
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+} else {
+  app.get('/', renderApiDashboard);
+}
 
 // App redirect route
 app.get('/app', (req, res) => {
+  if (fs.existsSync(path.join(distPath, 'index.html'))) {
+    return res.sendFile(path.join(distPath, 'index.html'));
+  }
   res.redirect(process.env.CLIENT_ORIGIN || 'https://strong-melba-f1efe5.netlify.app');
 });
 
@@ -636,6 +652,23 @@ app.post('/api/activity', (req, res) => {
   log('client_activity', req.body || {});
   res.json({ ok: true });
 });
+
+// =============================================================================
+// Full-Stack SPA Client-Side Routing for Render
+// All non-API routes serve dist/index.html so React Router handles navigation
+// =============================================================================
+if (fs.existsSync(distPath)) {
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path === '/products' || req.path === '/status' || req.path === '/api-dashboard') {
+      return next();
+    }
+    const indexPath = path.join(distPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+    next();
+  });
+}
 
 app.use((err, req, res, next) => {
   console.error(err);
