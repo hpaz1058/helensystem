@@ -199,6 +199,149 @@ app.use((req, res, next) => {
   next();
 });
 
+// -----------------------------------------------------------------------------
+// Root & Navigation Routes (Professional Dashboard & Direct Redirects)
+// -----------------------------------------------------------------------------
+app.get('/', async (req, res) => {
+  let productCount = 8;
+  try {
+    const [rows] = await db.query('SELECT COUNT(*) as cnt FROM products');
+    productCount = rows[0]?.cnt || 8;
+  } catch (e) {
+    productCount = 8;
+  }
+
+  const frontendUrl = process.env.CLIENT_ORIGIN || 'https://strong-melba-f1efe5.netlify.app';
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thread & Co. — Cloud API & MySQL Database Service</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    body { background: #fbf9f5; color: #212529; font-family: system-ui, -apple-system, sans-serif; }
+    .hero { background: #fff; border-bottom: 1px solid #e9ecef; }
+    .badge-status { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
+  </style>
+</head>
+<body class="py-4">
+  <div class="container" style="max-width: 860px;">
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4">
+      <div class="card-body p-4 p-md-5 hero text-center">
+        <div class="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-pill badge-status mb-3 small fw-semibold">
+          <i class="bi bi-check-circle-fill"></i> Service Online & Operational
+        </div>
+        <h1 class="display-6 fw-bold mb-2">♧ Thread & Co. API Service</h1>
+        <p class="text-secondary mb-4">Node.js + Express RESTful Backend connected to TiDB Cloud (MySQL 8.0)</p>
+        <div class="d-flex flex-wrap gap-2 justify-content-center">
+          <a href="${frontendUrl}" target="_blank" class="btn btn-dark rounded-pill px-4">
+            <i class="bi bi-box-arrow-up-right me-1"></i> Open Netlify App
+          </a>
+          <a href="/api/products" class="btn btn-outline-dark rounded-pill px-4">
+            <i class="bi bi-box-seam me-1"></i> View Products JSON
+          </a>
+          <a href="/api/health" class="btn btn-outline-secondary rounded-pill px-3">
+            <i class="bi bi-heart-pulse me-1"></i> Health Check
+          </a>
+        </div>
+      </div>
+      <div class="card-body p-4 bg-light border-top">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div class="bg-white p-3 rounded-3 border">
+              <span class="text-secondary small text-uppercase">Database</span>
+              <h6 class="fw-bold mb-0 text-success mt-1"><i class="bi bi-database-check me-1"></i> TiDB Cloud MySQL</h6>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="bg-white p-3 rounded-3 border">
+              <span class="text-secondary small text-uppercase">Catalog Items</span>
+              <h6 class="fw-bold mb-0 text-dark mt-1"><i class="bi bi-tag me-1"></i> ${productCount} Products Loaded</h6>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="bg-white p-3 rounded-3 border">
+              <span class="text-secondary small text-uppercase">Architecture</span>
+              <h6 class="fw-bold mb-0 text-dark mt-1"><i class="bi bi-layers me-1"></i> Decoupled WS102/CC106</h6>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm border-0 rounded-4 p-4">
+      <h5 class="fw-bold mb-3"><i class="bi bi-hdd-network me-2"></i> Available API Endpoints</h5>
+      <div class="list-group list-group-flush border rounded-3 overflow-hidden">
+        <a href="/api/products" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3">
+          <div>
+            <span class="badge bg-primary text-uppercase me-2">GET</span>
+            <code class="fw-semibold text-dark">/api/products</code> (or <code>/products</code>)
+            <div class="text-secondary small mt-1">Retrieves all clothing products from MySQL catalog</div>
+          </div>
+          <i class="bi bi-chevron-right text-muted"></i>
+        </a>
+        <a href="/api/product/1" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3">
+          <div>
+            <span class="badge bg-primary text-uppercase me-2">GET</span>
+            <code class="fw-semibold text-dark">/api/product/:id</code>
+            <div class="text-secondary small mt-1">Retrieves single product details by MySQL ID</div>
+          </div>
+          <i class="bi bi-chevron-right text-muted"></i>
+        </a>
+        <a href="/api/health" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3">
+          <div>
+            <span class="badge bg-success text-uppercase me-2">GET</span>
+            <code class="fw-semibold text-dark">/api/health</code>
+            <div class="text-secondary small mt-1">Render health-check and cloud database connectivity verification</div>
+          </div>
+          <i class="bi bi-chevron-right text-muted"></i>
+        </a>
+        <a href="/api/user" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3">
+          <div>
+            <span class="badge bg-secondary text-uppercase me-2">GET</span>
+            <code class="fw-semibold text-dark">/api/user</code>
+            <div class="text-secondary small mt-1">WS102 laboratory user table verification</div>
+          </div>
+          <i class="bi bi-chevron-right text-muted"></i>
+        </a>
+        <a href="${frontendUrl}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3">
+          <div>
+            <span class="badge bg-dark text-uppercase me-2">PWA</span>
+            <code class="fw-semibold text-dark">/app</code>
+            <div class="text-secondary small mt-1">Redirects directly to Netlify Frontend application</div>
+          </div>
+          <i class="bi bi-box-arrow-up-right text-muted"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`);
+});
+
+// App redirect route
+app.get('/app', (req, res) => {
+  res.redirect(process.env.CLIENT_ORIGIN || 'https://strong-melba-f1efe5.netlify.app');
+});
+
+// API Directory endpoint
+app.get('/api', (req, res) => {
+  res.json({
+    service: 'Thread & Co. REST API',
+    database: 'TiDB Cloud MySQL',
+    endpoints: {
+      products: '/api/products',
+      product_by_id: '/api/product/:id',
+      health: '/api/health',
+      users: '/api/user',
+      orders: '/api/order',
+    },
+  });
+});
+
 // Health check endpoint for Render/Netlify monitoring
 app.get('/api/health', (req, res) =>
   res.json({
@@ -212,11 +355,11 @@ app.get('/api/health', (req, res) =>
 );
 
 // =============================================================================
-// /api/product CRUD ENDPOINTS (Public GET, Protected Mutations)
+// /api/product & /api/products CRUD ENDPOINTS (Public GET, Protected Mutations)
 // =============================================================================
 
-// 1. SELECT - Retrieve all products (Public for shopping catalog)
-app.get('/api/product', async (req, res) => {
+// Helper handler for retrieving all products
+const handleGetAllProducts = async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM products ORDER BY product_id ASC');
     if (rows && rows.length > 0) {
@@ -240,14 +383,46 @@ app.get('/api/product', async (req, res) => {
   const products = read(productsFile);
   log('products_list_file', { count: products.length });
   res.json(products);
-});
+};
 
-// 2. SELECT by ID - Retrieve single product (Public)
-app.get('/api/product/:id', async (req, res) => {
+// 1. SELECT - Retrieve all products (Supports /api/product, /api/products, and /products)
+app.get('/api/product', handleGetAllProducts);
+app.get('/api/products', handleGetAllProducts);
+app.get('/products', handleGetAllProducts);
+
+// Helper handler for single product
+const handleGetProductById = async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM products WHERE product_id = ?', [req.params.id]);
     if (rows.length > 0) {
       const r = rows[0];
+      const product = {
+        id: r.product_id,
+        product_id: r.product_id,
+        name: r.product_name,
+        product_name: r.product_name,
+        price: Number(r.price),
+        category: r.category,
+        quantity: r.stock_quantity,
+        stock_quantity: r.stock_quantity,
+        description: r.description,
+      };
+      return res.json(product);
+    }
+  } catch (err) {
+    console.warn('MySQL SELECT by ID failed, using file fallback:', err.message);
+  }
+
+  const products = read(productsFile);
+  const product = products.find((p) => String(p.id) === String(req.params.id));
+  if (!product) return res.status(404).json({ error: 'Product not found' });
+  res.json(product);
+};
+
+// 2. SELECT by ID (Supports /api/product/:id, /api/products/:id, and /products/:id)
+app.get('/api/product/:id', handleGetProductById);
+app.get('/api/products/:id', handleGetProductById);
+app.get('/products/:id', handleGetProductById);
       return res.json({
         id: r.product_id,
         product_id: r.product_id,

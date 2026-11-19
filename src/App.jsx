@@ -644,6 +644,26 @@ function AppInner() {
             element={isAdmin ? <Navigate to="/admin" replace /> : <Shop products={products} />}
           />
           <Route
+            path="/products"
+            element={isAdmin ? <Navigate to="/admin" replace /> : <Shop products={products} />}
+          />
+          <Route
+            path="/all-products"
+            element={isAdmin ? <Navigate to="/admin" replace /> : <Shop products={products} />}
+          />
+          <Route
+            path="/app"
+            element={
+              isAdmin ? (
+                <Navigate to="/admin" replace />
+              ) : user ? (
+                <Home products={products} />
+              ) : (
+                <Welcome />
+              )
+            }
+          />
+          <Route
             path="/category/:category"
             element={isAdmin ? <Navigate to="/admin" replace /> : <CategoryRoute products={products} />}
           />
