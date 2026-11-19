@@ -447,21 +447,6 @@ const handleGetProductById = async (req, res) => {
 app.get('/api/product/:id', handleGetProductById);
 app.get('/api/products/:id', handleGetProductById);
 app.get('/products/:id', handleGetProductById);
-      return res.json({
-        id: r.product_id,
-        product_id: r.product_id,
-        name: r.product_name,
-        price: Number(r.price),
-        category: r.category,
-        quantity: r.stock_quantity,
-        description: r.description,
-      });
-    }
-  } catch (err) {}
-  const p = read(productsFile).find((x) => String(x.id) === String(req.params.id));
-  if (!p) return res.status(404).json({ message: 'Product not found' });
-  res.json(p);
-});
 
 // 3. INSERT - Add new product (Protected: Verified Admin Only)
 const handleCreateProduct = async (req, res) => {
@@ -662,10 +647,11 @@ app.post('/api/activity', (req, res) => {
 });
 
 // =============================================================================
-// Full-Stack SPA Client-Side Routing for Render
+// Full-Stack SPA Client-Side Routing for Render (Express 5 compatible)
 // All non-API routes serve dist/index.html so React Router handles navigation
 // =============================================================================
-app.get('*', (req, res, next) => {
+app.use((req, res, next) => {
+  if (req.method !== 'GET') return next();
   if (req.path.startsWith('/api/') || req.path === '/products' || req.path === '/status' || req.path === '/api-dashboard') {
     return next();
   }
