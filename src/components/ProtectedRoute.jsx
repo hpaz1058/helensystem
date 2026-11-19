@@ -11,6 +11,11 @@ export default function ProtectedRoute({ user, role, requiredRole, children }) {
     return <Navigate to="/login" replace />;
   }
 
+  // Wait until Firestore role is resolved before evaluating RBAC
+  if (role === null) {
+    return null;
+  }
+
   if (requiredRole && role !== requiredRole) {
     return <Navigate to="/access-denied" replace />;
   }

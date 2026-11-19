@@ -19,12 +19,16 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth';
 import {
+  collection,
   doc,
   getDoc,
   getDocFromServer,
+  getDocs,
   onSnapshot,
+  query,
   setDoc,
   serverTimestamp,
+  where,
 } from 'firebase/firestore';
 
 // API / Data
@@ -59,13 +63,63 @@ const CART_STORAGE_KEY = 'thread-co-cart-v1';
 // ============================================================
 
 /**
+ * Extracts normalized role ('admin' | 'user') from a Firestore user document.
+ * Supports field names: role, Role, ROLE, roles, Roles, ROLES, userRole, accountRole,
+ * as well as boolean flags isAdmin / admin and string arrays (e.g. ['Admin']).
+ */
+function extractRoleFromDoc(data) {
+  if (!data || typeof data !== 'object') return 'user';
+
+  if (data.isAdmin === true || data.admin === true) return 'admin';
+
+  const candidates = [
+    data.role,
+    data.Role,
+    data.ROLE,
+    data.roles,
+    data.Roles,
+    data.ROLES,
+    data.userRole,
+    data.accountRole,
+  ];
+
+  for (const val of candidates) {
+    if (val === undefined || val === null || val === '') continue;
+    if (Array.isArray(val)) {
+      const normalized = val.map((v) => String(v).toLowerCase().trim());
+      if (normalized.includes('admin') || normalized.includes('administrator')) {
+        return 'admin';
+      }
+    } else {
+      const normalized = String(val).toLowerCase().trim();
+      if (normalized === 'admin' || normalized === 'administrator') {
+        return 'admin';
+      }
+    }
+  }
+
+  return 'user';
+}
+
+/**
  * Fetches user profile from Firestore users/{UID}.
  * Uses live server data without persisting stale IndexedDB cache.
- * If user document does not exist, initializes it with role: 'user'.
- * If user document exists, preserves existing role ('Admin' or 'user').
+ * Retries once with a fresh ID token if permission-denied occurs during initial auth handshake.
+ * If user document does not exist, checks for a pre-created record by Email before initializing with 'user'.
  */
 async function syncFirestoreUser(currentUser) {
-  if (!currentUser) return 'user';
+  if (!currentUser) return { role: 'user', error: null };
+
+  const userRef = doc(db, 'users', currentUser.uid);
+
+  const readUserDoc = async () => {
+    try {
+      return await getDocFromServer(userRef);
+    } catch (serverErr) {
+      if (serverErr?.code === 'permission-denied') throw serverErr;
+      return await getDoc(userRef);
+    }
+  };
 
   try {
     // 1. Ensure Firebase Auth token is attached and active
@@ -73,41 +127,72 @@ async function syncFirestoreUser(currentUser) {
       await currentUser.getIdToken();
     } catch {}
 
-    const userRef = doc(db, 'users', currentUser.uid);
     let existingSnapshot;
     try {
-      existingSnapshot = await getDocFromServer(userRef);
-    } catch {
-      existingSnapshot = await getDoc(userRef);
+      existingSnapshot = await readUserDoc();
+    } catch (firstErr) {
+      // Retry once after force-refreshing token (handles fresh Google Sign-In handshake)
+      if (firstErr?.code === 'permission-denied') {
+        await new Promise((resolve) => setTimeout(resolve, 450));
+        try {
+          await currentUser.getIdToken(true);
+        } catch {}
+        existingSnapshot = await readUserDoc();
+      } else {
+        throw firstErr;
+      }
     }
 
-    // 2. First login: create document with default role 'user' in Firestore
+    // 2. First login: check if admin pre-created a doc by email; otherwise create with default 'user'
     if (!existingSnapshot.exists()) {
+      let initialRole = 'user';
+      if (currentUser.email) {
+        try {
+          const usersCol = collection(db, 'users');
+          const [byEmailCap, byEmailLow] = await Promise.all([
+            getDocs(query(usersCol, where('Email', '==', currentUser.email))),
+            getDocs(query(usersCol, where('email', '==', currentUser.email))),
+          ]);
+          const matchedDoc = byEmailCap.docs[0] || byEmailLow.docs[0];
+          if (matchedDoc) {
+            initialRole = extractRoleFromDoc(matchedDoc.data());
+          }
+        } catch {
+          // Ignore if Firestore rules restrict collection queries
+        }
+      }
+
       const provider = currentUser.providerData?.[0]?.providerId || 'google.com';
-      await setDoc(userRef, {
-        UID: currentUser.uid,
-        Name: currentUser.displayName || '',
-        Email: currentUser.email || '',
-        'Photo URL': currentUser.photoURL || '',
-        Provider: provider,
-        createdAt: serverTimestamp(),
-        'Created date': serverTimestamp(),
-        role: 'user',
-      });
-      return 'user';
+      try {
+        await setDoc(userRef, {
+          UID: currentUser.uid,
+          Name: currentUser.displayName || '',
+          Email: currentUser.email || '',
+          'Photo URL': currentUser.photoURL || '',
+          Provider: provider,
+          createdAt: serverTimestamp(),
+          'Created date': serverTimestamp(),
+          role: initialRole,
+        });
+      } catch (createErr) {
+        console.warn('[RBAC Sync] Could not auto-create user doc:', createErr);
+      }
+      return { role: initialRole, error: null };
     }
 
     // 3. Document exists: read role strictly from Firestore document
     const existingData = existingSnapshot.data() || {};
-    const rawRole = String(
-      existingData.role ?? existingData.Role ?? existingData.ROLE ?? (existingData.isAdmin || existingData.admin ? 'admin' : 'user')
-    ).toLowerCase().trim();
-    const finalRole = (rawRole === 'admin' || rawRole === 'administrator') ? 'admin' : 'user';
-    console.log(`[RBAC Sync] User: ${currentUser.email} | Firestore role field: "${existingData.role}" => Active Role: ${finalRole}`);
-    return finalRole;
+    const finalRole = extractRoleFromDoc(existingData);
+    console.log(
+      `[RBAC Sync] User: ${currentUser.email} | UID: ${currentUser.uid} | Firestore role: "${existingData.role ?? existingData.roles ?? existingData.Role}" => Active Role: ${finalRole}`
+    );
+    return { role: finalRole, error: null };
   } catch (err) {
     console.error('[RBAC Sync Error - Check Firebase Rules]:', err);
-    return 'user';
+    return {
+      role: 'user',
+      error: err?.code === 'permission-denied' ? 'permission-denied' : (err?.message || 'sync-failed'),
+    };
   }
 }
 
@@ -191,6 +276,7 @@ function AppInner() {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [firestoreError, setFirestoreError] = useState(null);
   const [products, setProducts] = useState(fallbackProducts);
 
   const [cart, setCart] = useState(() => {
@@ -258,6 +344,7 @@ function AppInner() {
   // ----------------------------------------------------------
   useEffect(() => {
     let unsubscribeFirestore = null;
+    let isCancelled = false;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (unsubscribeFirestore) {
@@ -268,17 +355,25 @@ function AppInner() {
       if (!currentUser) {
         setUser(null);
         setRole(null);
+        setFirestoreError(null);
         try { localStorage.removeItem('thread_user_role'); } catch {}
         setLoading(false);
         return;
       }
 
+      // Hold UI in loading state while Firestore role is verified (prevents user-dashboard flicker)
+      setLoading(true);
+      setRole(null);
+      setFirestoreError(null);
       setUser(currentUser);
 
       try {
         // Read strictly from Firestore server
-        const firestoreRole = await syncFirestoreUser(currentUser);
+        const { role: firestoreRole, error: syncError } = await syncFirestoreUser(currentUser);
+        if (isCancelled) return;
+
         setRole(firestoreRole);
+        setFirestoreError(syncError);
         try { localStorage.setItem('thread_user_role', firestoreRole); } catch {}
 
         const currentPath = window.location.pathname;
@@ -288,7 +383,7 @@ function AppInner() {
           }
         } else {
           // Role is 'user'
-          if (currentPath === '/admin' || currentPath === '/login') {
+          if (currentPath === '/admin' || currentPath === '/login' || currentPath === '/access-denied') {
             navigate('/', { replace: true });
           }
         }
@@ -299,23 +394,25 @@ function AppInner() {
           userRef,
           (snapshot) => {
             if (snapshot.exists()) {
-              const data = snapshot.data() || {};
-              const rawRole = String(
-                data.role ?? data.Role ?? data.ROLE ?? (data.isAdmin || data.admin ? 'admin' : 'user')
-              ).toLowerCase().trim();
-              const liveRole = (rawRole === 'admin' || rawRole === 'administrator') ? 'admin' : 'user';
+              const liveRole = extractRoleFromDoc(snapshot.data());
               setRole(liveRole);
+              setFirestoreError(null);
               try { localStorage.setItem('thread_user_role', liveRole); } catch {}
 
               const path = window.location.pathname;
               if (liveRole === 'admin' && path !== '/admin') {
                 navigate('/admin', { replace: true });
-              } else if (liveRole === 'user' && path === '/admin') {
+              } else if (liveRole === 'user' && (path === '/admin' || path === '/access-denied')) {
                 navigate('/', { replace: true });
               }
             }
           },
-          (err) => console.warn('Real-time role sync notice:', err)
+          (err) => {
+            console.warn('Real-time role sync notice:', err);
+            if (err?.code === 'permission-denied') {
+              setFirestoreError('permission-denied');
+            }
+          }
         );
 
         try {
@@ -330,13 +427,17 @@ function AppInner() {
       } catch (error) {
         console.error('Failed to sync Firestore user:', error);
         setRole('user');
+        setFirestoreError(error?.code || 'sync-failed');
         try { localStorage.setItem('thread_user_role', 'user'); } catch {}
       } finally {
-        setLoading(false);
+        if (!isCancelled) {
+          setLoading(false);
+        }
       }
     });
 
     return () => {
+      isCancelled = true;
       unsubscribeAuth();
       if (unsubscribeFirestore) unsubscribeFirestore();
     };
@@ -359,6 +460,7 @@ function AppInner() {
       setCartOpen(false);
       setUser(null);
       setRole(null);
+      setFirestoreError(null);
       try { localStorage.removeItem('thread_user_role'); } catch {}
       navigate('/');
     } catch (error) {
@@ -367,46 +469,17 @@ function AppInner() {
   };
 
   const googleLogin = async () => {
-    const cred = await signInWithPopup(auth, googleProvider);
-    setUser(cred.user);
-    const userRole = await syncFirestoreUser(cred.user);
-    setRole(userRole);
-    try { localStorage.setItem('thread_user_role', userRole); } catch {}
-    if (userRole === 'admin') {
-      navigate('/admin', { replace: true });
-    } else {
-      navigate('/', { replace: true });
-    }
-    return userRole;
+    // onAuthStateChanged handles Firestore role lookup and instant redirect atomically
+    await signInWithPopup(auth, googleProvider);
   };
 
   const emailLogin = async (email, password) => {
-    const cred = await signInWithEmailAndPassword(auth, email, password);
-    setUser(cred.user);
-    const userRole = await syncFirestoreUser(cred.user);
-    setRole(userRole);
-    try { localStorage.setItem('thread_user_role', userRole); } catch {}
-    if (userRole === 'admin') {
-      navigate('/admin', { replace: true });
-    } else {
-      navigate('/', { replace: true });
-    }
-    return userRole;
+    await signInWithEmailAndPassword(auth, email, password);
   };
 
   const register = async (name, email, password) => {
     const credential = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(credential.user, { displayName: name });
-    setUser(credential.user);
-    const userRole = await syncFirestoreUser(credential.user);
-    setRole(userRole);
-    try { localStorage.setItem('thread_user_role', userRole); } catch {}
-    if (userRole === 'admin') {
-      navigate('/admin', { replace: true });
-    } else {
-      navigate('/', { replace: true });
-    }
-    return userRole;
   };
 
   // ----------------------------------------------------------
@@ -527,7 +600,7 @@ function AppInner() {
     return order;
   };
 
-  if (loading) {
+  if (loading || (user && role === null)) {
     return <Loading />;
   }
 
@@ -543,6 +616,15 @@ function AppInner() {
         onCart={() => setCartOpen(true)}
         onLogout={logout}
       >
+        {firestoreError === 'permission-denied' && (
+          <div className="alert alert-warning d-flex align-items-center justify-content-between m-3 rounded-3 shadow-sm" role="alert">
+            <div className="small">
+              <i className="bi bi-exclamation-triangle-fill me-2" />
+              <strong>Firestore Rules Notice:</strong> Unable to read your role from Firestore (<code>permission-denied</code>). Publish <code>allow read, write: if request.auth != null;</code> in Firebase Console → Firestore → Rules.
+            </div>
+            <button type="button" className="btn-close btn-sm ms-3" aria-label="Close" onClick={() => setFirestoreError(null)} />
+          </div>
+        )}
         <Routes>
           {/* Landing / Storefront Views: strictly separated by role with zero flicker */}
           <Route

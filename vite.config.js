@@ -40,7 +40,7 @@ export default defineConfig({
             urlPattern: ({ request }) => ['style', 'script', 'font'].includes(request.destination),
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'thread-static-v5',
+              cacheName: 'thread-static-v6',
               networkTimeoutSeconds: 3,
               expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 7 }
             }
