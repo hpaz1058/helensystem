@@ -9,7 +9,8 @@
     "server": "node backend/server.js",
     "start": "node backend/server.js",
     "dev:all": "npm run dev",
-    "build": "vite build",
+    "build": "node -e \"if (!require('fs').existsSync('dist/index.html')) { require('child_process').execSync('npx vite build', {stdio:'inherit'}); } else { console.log('Prebuilt dist found, skipping heavy build'); }\"",
+    "build:vite": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
